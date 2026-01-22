@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+.ipynb_checkpoints/
+dist/
+build/
+*.egg-info/
+
+
+# ignore the following:
+/RL_QEC_papers/
+
