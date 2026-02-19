@@ -1,0 +1,12 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Generated data/results
+results/figures/*
+results/tables/*
+!results/figures/.gitkeep
+!results/tables/.gitkeep
