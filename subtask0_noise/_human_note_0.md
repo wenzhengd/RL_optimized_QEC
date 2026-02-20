@@ -145,6 +145,7 @@ Use the following compact, robust set:
 - Compute and plot autocorrelation function (ACF) for generated noise.
 - For IID, expected ACF is near zero for nonzero lag.
 - For telegraph, compare empirical ACF against expected exponential decay trend.
+- For Gaussian spectrum mode, reconstruct target ACF from target PSD (inverse FFT / Wiener-Khinchin) and compare.
 
 3. Frequency-domain check
 - Plot empirical PSD (ensemble-averaged FFT-based PSD).
@@ -160,7 +161,7 @@ Recommended numeric summary fields in JSON/text:
 - `mean_empirical`, `mean_target`
 - `var_empirical`, `var_target`
 - `skew_empirical`, `skew_target` (if target known)
-- `acf_mismatch` (optional)
+- `acf_mismatch` (required for telegraph and gaussian)
 - `psd_mismatch` (for Gaussian spectrum mode)
 - `peak_freq_empirical`, `peak_freq_target` (for Gaussian spectrum mode)
 
@@ -198,13 +199,13 @@ All generated/inspection artifacts for this subtask must stay inside `subtask0_n
 
 Default paths:
 - Generated noise file:
-  - `subtask0_noise/noise_{noise_model}_seed{seed}.npz`
+  - `subtask0_noise/subtask0_data/noise_{noise_model}_seed{seed}.npz`
 - Inspection summary JSON:
-  - `subtask0_noise/inspect_{noise_model}_seed{seed}.json`
+  - `subtask0_noise/subtask0_data/inspect_{noise_model}_seed{seed}.json`
 - Inspection plots:
-  - `subtask0_noise/hist_compare_{noise_model}_seed{seed}.png`
-  - `subtask0_noise/acf_compare_{noise_model}_seed{seed}.png`
-  - `subtask0_noise/psd_compare_{noise_model}_seed{seed}.png`
+  - `subtask0_noise/subtask0_data/hist_compare_{noise_model}_seed{seed}.png`
+  - `subtask0_noise/subtask0_data/acf_compare_{noise_model}_seed{seed}.png`
+  - `subtask0_noise/subtask0_data/psd_compare_{noise_model}_seed{seed}.png`
 
 If user provides explicit output arguments, use user-provided paths.
 
@@ -228,6 +229,9 @@ IID ACF (nonzero lags up to lag 20):
 Telegraph ACF:
 - compare to exponential trend; normalized L2 mismatch `<= 0.20`
 
+Gaussian ACF:
+- compare to target ACF reconstructed from target PSD; normalized L2 mismatch `<= 0.25`
+
 Gaussian PSD:
 - normalized L2 mismatch `<= 0.25`
 - peak frequency relative error:
@@ -247,7 +251,7 @@ python subtask0_noise/generate_noise.py \
   --noise_model iid --dist normal --sigma 1.0 \
   --T 10.0 --n_time 2048 --n_traj 128 --seed 101
 python subtask0_noise/inspect_noise.py \
-  --input subtask0_noise/noise_iid_seed101.npz
+  --input subtask0_noise/subtask0_data/noise_iid_seed101.npz
 ```
 
 2. Gaussian-spectrum test:
@@ -256,7 +260,7 @@ python subtask0_noise/generate_noise.py \
   --noise_model gaussian --f0 5.0 --sigma_f 1.0 --amplitude 1.0 \
   --T 10.0 --n_time 2048 --n_traj 128 --seed 202
 python subtask0_noise/inspect_noise.py \
-  --input subtask0_noise/noise_gaussian_seed202.npz --save_plot
+  --input subtask0_noise/subtask0_data/noise_gaussian_seed202.npz --save_plot
 ```
 
 3. Telegraph test:
@@ -265,7 +269,7 @@ python subtask0_noise/generate_noise.py \
   --noise_model telegraph --flip_rate 2.0 --p_init_plus 0.5 \
   --T 10.0 --n_time 2048 --n_traj 128 --seed 303
 python subtask0_noise/inspect_noise.py \
-  --input subtask0_noise/noise_telegraph_seed303.npz --save_plot
+  --input subtask0_noise/subtask0_data/noise_telegraph_seed303.npz --save_plot
 ```
 
 ---
@@ -292,7 +296,7 @@ python -m py_compile subtask0_noise/generate_noise.py subtask0_noise/inspect_noi
 
 2. Run all canonical test cases (Section 7).
 
-3. Confirm outputs exist in `subtask0_noise/`:
+3. Confirm outputs exist in `subtask0_noise/subtask0_data/`:
 - `.npz` generated files
 - `.json` summary files (if enabled)
 - `.png` plots (when `--save_plot` is used)

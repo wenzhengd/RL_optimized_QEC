@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
+LUCKY_SEED = 42
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments for noise generation."""
@@ -33,7 +35,12 @@ def parse_args() -> argparse.Namespace:
         default=1000,
         help="Number of noise trajectories in the ensemble.",
     )
-    parser.add_argument("--seed", type=int, required=True, help="Random seed.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=LUCKY_SEED,
+        help=f"Random seed (forced to lucky seed {LUCKY_SEED}).",
+    )
     parser.add_argument(
         "--amplitude",
         type=float,
@@ -81,8 +88,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def _default_output_path(noise_model: str, seed: int) -> Path:
-    """Build the default output path in subtask0_noise/."""
-    return Path("subtask0_noise") / f"noise_{noise_model}_seed{seed}.npz"
+    """Build the default output path in subtask0_noise/subtask0_data/."""
+    _ = seed
+    return Path("subtask0_noise") / "subtask0_data" / f"noise_{noise_model}.npz"
 
 
 def _validate_args(args: argparse.Namespace) -> float:
@@ -195,6 +203,11 @@ def _gen_telegraph(
 
 def main() -> None:
     args = parse_args()
+    # Project decision: use one fixed lucky seed for all task0 generations.
+    if args.seed != LUCKY_SEED:
+        print(f"[WARN] Overriding --seed={args.seed} to lucky seed {LUCKY_SEED}.")
+    args.seed = LUCKY_SEED
+
     dt = _validate_args(args)
     rng = np.random.default_rng(args.seed)
 

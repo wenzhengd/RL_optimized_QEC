@@ -74,6 +74,20 @@ def _empirical_psd(noise: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray
     return freqs, psd
 
 
+def _target_acf_from_psd(target_psd: np.ndarray, n_time: int, lag_max: int) -> np.ndarray:
+    """Reconstruct target ACF from one-sided target PSD.
+
+    Uses Wiener-Khinchin numerically: ACF is inverse FFT of PSD.
+    We normalize by lag-0 so the target ACF starts at 1.
+    """
+    acf_full = np.fft.irfft(target_psd, n=n_time)
+    acf_full = np.real(acf_full)
+    scale = float(acf_full[0]) if abs(float(acf_full[0])) > 1e-12 else 1.0
+    acf_full = acf_full / scale
+    lag_max = min(lag_max, n_time - 1)
+    return acf_full[: lag_max + 1]
+
+
 def _target_stats(meta: dict[str, Any]) -> dict[str, float | None]:
     """Compute intended mean/variance/skewness from metadata when defined."""
     model = meta["noise_model"]
@@ -115,11 +129,13 @@ def _status(ok: bool, small_sample: bool) -> str:
 
 
 def _default_out_json(model: str, seed: int) -> Path:
-    return Path("subtask0_noise") / f"inspect_{model}_seed{seed}.json"
+    _ = seed
+    return Path("subtask0_noise") / "subtask0_data" / f"inspect_{model}.json"
 
 
 def _default_plot_path(kind: str, model: str, seed: int) -> Path:
-    return Path("subtask0_noise") / f"{kind}_{model}_seed{seed}.png"
+    _ = seed
+    return Path("subtask0_noise") / "subtask0_data" / f"{kind}_{model}.png"
 
 
 def main() -> None:
@@ -160,18 +176,21 @@ def main() -> None:
     acf_emp = _acf_ensemble(noise, lag_max)
     acf_mismatch = None
     acf_status = "N/A"
+    acf_target_plot = None
     if model == "iid":
         # IID target: near-zero autocorrelation at nonzero lags.
         tail = acf_emp[1 : min(21, len(acf_emp))]
         iid_ok = bool(np.max(np.abs(tail)) <= 0.10)
         acf_status = _status(iid_ok, small_sample)
         acf_mismatch = float(np.max(np.abs(tail)))
+        lags = np.arange(len(acf_emp), dtype=np.float64)
+        acf_target_plot = np.where(lags == 0, 1.0, 0.0)
     elif model == "telegraph":
         # Telegraph target ACF: exponential decay trend.
         flip_rate = float(meta.get("flip_rate", 0.0))
         lags = np.arange(len(acf_emp), dtype=np.float64)
-        acf_target = np.exp(-2.0 * flip_rate * dt * lags)
-        acf_mismatch = _normalized_l2(acf_emp[1:], acf_target[1:])
+        acf_target_plot = np.exp(-2.0 * flip_rate * dt * lags)
+        acf_mismatch = _normalized_l2(acf_emp[1:], acf_target_plot[1:])
         acf_status = _status(acf_mismatch <= 0.20, small_sample)
 
     freqs, psd_emp = _empirical_psd(noise, dt)
@@ -201,6 +220,15 @@ def main() -> None:
 
         psd_ok = (psd_mismatch <= 0.25) and (peak_rel_err <= 0.15)
         psd_status = _status(psd_ok, small_sample)
+
+        # Reconstruct Gaussian target ACF from target PSD for ACF overlay and mismatch.
+        acf_target_plot = _target_acf_from_psd(
+            target_psd=target_psd,
+            n_time=noise.shape[1],
+            lag_max=lag_max,
+        )
+        acf_mismatch = _normalized_l2(acf_emp[1:], acf_target_plot[1:])
+        acf_status = _status(acf_mismatch <= 0.25, small_sample)
 
     summary: dict[str, Any] = {
         "input_file": str(input_path),
@@ -246,6 +274,28 @@ def main() -> None:
             high = amp * float(meta.get("high", 1.0))
             ys = np.where((xs >= low) & (xs <= high), 1.0 / max(high - low, 1e-12), 0.0)
             plt.plot(xs, ys, label="Target PDF", lw=2)
+        elif model == "gaussian":
+            # For Gaussian-spectrum noise, time-domain marginal is approximately Gaussian.
+            # We use target mean (dc_offset) and empirical std as a practical reference overlay.
+            mu_ref = float(meta.get("dc_offset", 0.0))
+            sigma_ref = max(np.sqrt(var_emp), 1e-12)
+            plt.plot(
+                xs,
+                norm.pdf(xs, loc=mu_ref, scale=sigma_ref),
+                label="Target-like PDF",
+                lw=2,
+            )
+        elif model == "telegraph":
+            # Telegraph target is a two-point distribution at {-1, +1}.
+            # We approximate delta spikes with narrow Gaussians for visualization.
+            p_plus = float(meta.get("p_init_plus", 0.5))
+            p_minus = 1.0 - p_plus
+            sigma_spike = 0.015
+            ys = (
+                p_minus * norm.pdf(xs, loc=-1.0, scale=sigma_spike)
+                + p_plus * norm.pdf(xs, loc=1.0, scale=sigma_spike)
+            )
+            plt.plot(xs, ys, label="Target PMF (smoothed)", lw=2)
         plt.title(f"Histogram Comparison ({model})")
         plt.xlabel("Noise value")
         plt.ylabel("Density")
@@ -259,12 +309,8 @@ def main() -> None:
         lags = np.arange(len(acf_emp))
         plt.figure(figsize=(7, 4))
         plt.plot(lags, acf_emp, label="Empirical ACF")
-        if model == "iid":
-            plt.plot(lags, np.where(lags == 0, 1.0, 0.0), "--", label="Target ACF")
-        elif model == "telegraph":
-            flip_rate = float(meta.get("flip_rate", 0.0))
-            acf_target = np.exp(-2.0 * flip_rate * dt * lags)
-            plt.plot(lags, acf_target, "--", label="Target ACF")
+        if acf_target_plot is not None:
+            plt.plot(lags, acf_target_plot, "--", label="Target ACF")
         plt.title(f"ACF Comparison ({model})")
         plt.xlabel("Lag")
         plt.ylabel("Autocorrelation")

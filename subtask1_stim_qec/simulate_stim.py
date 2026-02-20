@@ -70,12 +70,17 @@ class StimQECSimulator:
         schedule, schedule_text = self._load_schedule()
         self._validate_schedule(schedule)
 
-        detector_history = self._simulate_detector_history(schedule)
+        detector_history, backend_mode = self._simulate_detector_history(schedule)
         measurement_history = None
         if self.config.save_measurements:
             measurement_history = self._simulate_measurements_stub(detector_history)
 
-        meta = self._build_metadata(schedule, schedule_text, detector_history)
+        meta = self._build_metadata(
+            schedule=schedule,
+            schedule_text=schedule_text,
+            detector_history=detector_history,
+            backend_mode=backend_mode,
+        )
         out_path = self._resolve_output_path()
         self._save_result(out_path, detector_history, meta, measurement_history)
         return out_path
@@ -157,18 +162,32 @@ class StimQECSimulator:
             return 14
         raise ValueError(f"Unsupported code: {self.config.code}")
 
-    def _simulate_detector_history(self, schedule: dict[str, Any]) -> np.ndarray:
+    def _simulate_detector_history(
+        self, schedule: dict[str, Any]
+    ) -> tuple[np.ndarray, str]:
         """Generate detector history.
 
-        Current implementation is a deterministic scaffold:
-        - uses per-round total Pauli probability to set detector trigger rate
-        - keeps output shape and binary semantics identical to final target
+        Behavior:
+        - If Stim is available and code is small_surface: use round-wise Stim sampling.
+        - Otherwise: use deterministic scaffold sampling.
         """
+        if stim is not None and self.config.code == "small_surface":
+            try:
+                hist = self._simulate_detector_history_stim_small_surface(schedule)
+                return hist, "stim_roundwise_small_surface"
+            except Exception as exc:
+                print(f"[WARN] Stim backend failed; fallback to scaffold. reason={exc}")
+
+        hist = self._simulate_detector_history_scaffold(schedule)
+        return hist, "scaffold"
+
+    def _simulate_detector_history_scaffold(
+        self, schedule: dict[str, Any]
+    ) -> np.ndarray:
+        """Fallback history generator used when Stim backend is unavailable."""
         n_det = self._detectors_per_round()
         hist = np.zeros((self.config.shots, self.config.rounds, n_det), dtype=np.uint8)
 
-        # TODO: replace this scaffold with actual Stim circuit sampling.
-        # If stim is installed, class structure is ready for direct integration.
         if stim is None:
             print("[WARN] stim not available; using scaffold detector sampling.")
 
@@ -181,6 +200,64 @@ class StimQECSimulator:
             hist[:, r, :] = draws.astype(np.uint8)
         return hist
 
+    def _simulate_detector_history_stim_small_surface(
+        self, schedule: dict[str, Any]
+    ) -> np.ndarray:
+        """Round-wise Stim sampling for small_surface.
+
+        Note:
+        - This is a practical bridge implementation.
+        - Each round is sampled with its own one-round circuit and per-round Pauli rate.
+        """
+        all_rounds: list[np.ndarray] = []
+        n_det_ref: int | None = None
+
+        for r in range(self.config.rounds):
+            px, py, pz = self._round_probs(schedule, r)
+            p_total = min(1.0, max(0.0, px + py + pz))
+
+            circuit = self._build_small_surface_round_circuit(p_total)
+            sampler = circuit.compile_detector_sampler(seed=self.config.seed + r)
+            det = sampler.sample(self.config.shots, append_observables=False)
+            det = np.asarray(det, dtype=np.uint8)
+
+            if det.ndim != 2:
+                raise RuntimeError(f"Unexpected detector sample shape at round {r}: {det.shape}")
+            if n_det_ref is None:
+                n_det_ref = det.shape[1]
+            elif det.shape[1] != n_det_ref:
+                raise RuntimeError(
+                    f"Detector count changed across rounds: {n_det_ref} vs {det.shape[1]}"
+                )
+
+            all_rounds.append(det)
+
+        # Stack into (shots, rounds, n_detectors_per_round).
+        hist = np.stack(all_rounds, axis=1)
+        return hist
+
+    def _build_small_surface_round_circuit(self, p_total: float) -> Any:
+        """Build one-round small surface code circuit with effective Pauli noise."""
+        # Prefer a richer noise model if this Stim version supports all kwargs.
+        try:
+            return stim.Circuit.generated(
+                "surface_code:rotated_memory_x",
+                distance=self.config.distance,
+                rounds=1,
+                after_clifford_depolarization=p_total,
+                before_round_data_depolarization=p_total,
+                before_measure_flip_probability=0.0,
+                after_reset_flip_probability=0.0,
+            )
+        except TypeError:
+            # Fallback for older Stim versions with fewer generator kwargs.
+            return stim.Circuit.generated(
+                "surface_code:rotated_memory_x",
+                distance=self.config.distance,
+                rounds=1,
+                after_clifford_depolarization=p_total,
+            )
+
     def _simulate_measurements_stub(self, detector_history: np.ndarray) -> np.ndarray:
         """Create placeholder measurement history when user requests it."""
         shots, rounds, n_det = detector_history.shape
@@ -192,6 +269,7 @@ class StimQECSimulator:
         schedule: dict[str, Any],
         schedule_text: str,
         detector_history: np.ndarray,
+        backend_mode: str,
     ) -> dict[str, Any]:
         shots, rounds, n_det = detector_history.shape
         digest = hashlib.sha256(schedule_text.encode("utf-8")).hexdigest()
@@ -208,7 +286,7 @@ class StimQECSimulator:
             "n_detectors_per_round": int(n_det),
             "schedule_type": schedule.get("schedule_type"),
             "stim_version": stim_version,
-            "backend_mode": "scaffold",
+            "backend_mode": backend_mode,
         }
 
     def _resolve_output_path(self) -> Path:

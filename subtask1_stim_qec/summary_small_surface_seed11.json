@@ -1,0 +1,32 @@
+{
+  "input_file": "subtask1_stim_qec/stim_small_surface_seed11.npz",
+  "code": "small_surface",
+  "seed": 11,
+  "shape": {
+    "shots": 16,
+    "rounds": 5,
+    "n_detectors_per_round": 12
+  },
+  "binary_check": {
+    "is_binary": true,
+    "unique_values": [
+      0,
+      1
+    ]
+  },
+  "global_trigger_rate": 0.020833333333333332,
+  "per_round_trigger_rate": [
+    0.010416666666666666,
+    0.03125,
+    0.026041666666666668,
+    0.010416666666666666,
+    0.026041666666666668
+  ],
+  "temporal_autocorr_round_rate_lag0_to_lag4": [
+    1.0,
+    -0.5357142857142858,
+    -0.5952380952380952,
+    1.0714285714285716,
+    -0.7142857142857142
+  ]
+}
