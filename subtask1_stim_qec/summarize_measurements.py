@@ -30,11 +30,13 @@ def _parse_meta(meta_json_obj: Any) -> dict[str, Any]:
 
 
 def _default_out_json(code: str, seed: int) -> Path:
-    return Path("subtask1_stim_qec") / f"summary_{code}_seed{seed}.json"
+    _ = seed
+    return Path("subtask1_stim_qec") / "subtask1_data" / f"summary_{code}.json"
 
 
 def _default_plot_path(code: str, seed: int) -> Path:
-    return Path("subtask1_stim_qec") / f"trigger_rate_{code}_seed{seed}.png"
+    _ = seed
+    return Path("subtask1_stim_qec") / "subtask1_data" / f"trigger_rate_{code}.png"
 
 
 def _round_rate_autocorr(round_rates: np.ndarray) -> list[float]:

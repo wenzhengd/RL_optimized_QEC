@@ -1,0 +1,31 @@
+{
+  "input_file": "subtask1_stim_qec/subtask1_data/stim_code_9_1_3.npz",
+  "code": "code_9_1_3",
+  "seed": 43,
+  "shape": {
+    "shots": 512,
+    "rounds": 5,
+    "n_detectors_per_round": 8
+  },
+  "binary_check": {
+    "is_binary": true,
+    "unique_values": [
+      0
+    ]
+  },
+  "global_trigger_rate": 0.0,
+  "per_round_trigger_rate": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "temporal_autocorr_round_rate_lag0_to_lag4": [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ]
+}

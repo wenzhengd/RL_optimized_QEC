@@ -17,6 +17,8 @@ from typing import Any
 
 import numpy as np
 
+LUCKY_SEED = 43
+
 try:
     import stim  # type: ignore
 except Exception:  # pragma: no cover - optional during scaffold stage
@@ -33,6 +35,7 @@ class SimConfig:
     seed: int
     schedule_file: str
     out: str
+    circuit_out: str = ""
     distance: int = 3
     save_measurements: bool = False
     strict: bool = False
@@ -44,13 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--code",
         required=True,
-        choices=["small_surface", "steane7", "shor9", "gauge_color_15"],
+        choices=["code_4_2_2", "code_9_1_3", "small_surface", "steane7", "shor9", "gauge_color_15"],
     )
     parser.add_argument("--rounds", type=int, required=True)
     parser.add_argument("--shots", type=int, required=True)
-    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=LUCKY_SEED,
+        help=f"Random seed (forced to lucky seed {LUCKY_SEED}).",
+    )
     parser.add_argument("--schedule_file", type=str, required=True)
     parser.add_argument("--out", type=str, default="")
+    parser.add_argument(
+        "--circuit_out",
+        type=str,
+        default="",
+        help="Optional path to save full circuit text (.stim).",
+    )
     parser.add_argument("--distance", type=int, default=3)
     parser.add_argument("--save_measurements", action="store_true")
     parser.add_argument("--strict", action="store_true")
@@ -66,6 +80,10 @@ class StimQECSimulator:
 
     def run(self) -> Path:
         """Run the full pipeline: load schedule -> simulate -> save output."""
+        if self.config.seed != LUCKY_SEED:
+            print(f"[WARN] Overriding --seed={self.config.seed} to lucky seed {LUCKY_SEED}.")
+            self.config.seed = LUCKY_SEED
+            self.rng = np.random.default_rng(self.config.seed)
         self._validate_basic_args()
         schedule, schedule_text = self._load_schedule()
         self._validate_schedule(schedule)
@@ -83,7 +101,56 @@ class StimQECSimulator:
         )
         out_path = self._resolve_output_path()
         self._save_result(out_path, detector_history, meta, measurement_history)
+        if self.config.circuit_out:
+            self.save_full_circuit(schedule=schedule, out_path=Path(self.config.circuit_out))
         return out_path
+
+    def build_full_circuit(self, schedule: dict[str, Any]) -> Any:
+        """Build the full multi-round circuit used for visualization/export.
+
+        Current support:
+        - `small_surface` with Stim installed: concatenate one-round generated circuits.
+        - otherwise: return None (no concrete Stim circuit available in scaffold mode).
+        """
+        if stim is None:
+            return None
+
+        if self.config.code in ("code_9_1_3", "small_surface"):
+            full = stim.Circuit()
+            for r in range(self.config.rounds):
+                px, py, pz = self._round_probs(schedule, r)
+                p_total = min(1.0, max(0.0, px + py + pz))
+                round_circuit = self._build_small_surface_round_circuit(p_total)
+                full += round_circuit
+            return full
+
+        if self.config.code == "code_4_2_2":
+            full = stim.Circuit()
+            for r in range(self.config.rounds):
+                px, py, pz = self._round_probs(schedule, r)
+                p_total = min(1.0, max(0.0, px + py + pz))
+                full += self._build_422_round_circuit(p_total)
+            return full
+
+        return None
+
+    def get_full_circuit_text(self, schedule: dict[str, Any]) -> str:
+        """Return a text diagram/description of the full circuit."""
+        circuit = self.build_full_circuit(schedule)
+        if circuit is None:
+            return (
+                "# Circuit export unavailable in current backend.\n"
+                f"# code={self.config.code}, stim_available={stim is not None}\n"
+                "# Use code=small_surface with Stim installed to get full .stim text.\n"
+            )
+        return str(circuit)
+
+    def save_full_circuit(self, schedule: dict[str, Any], out_path: Path) -> None:
+        """Save full circuit text to file."""
+        text = self.get_full_circuit_text(schedule)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text)
+        print(f"[OK] Saved circuit text: {out_path}")
 
     def _validate_basic_args(self) -> None:
         if self.config.rounds < 1:
@@ -151,7 +218,9 @@ class StimQECSimulator:
         This is a scaffold estimate. Replace with exact count from real Stim circuit
         once backend construction is implemented.
         """
-        if self.config.code == "small_surface":
+        if self.config.code == "code_4_2_2":
+            return 2
+        if self.config.code in ("code_9_1_3", "small_surface"):
             d = self.config.distance
             return max(1, 2 * d * (d - 1))
         if self.config.code == "steane7":
@@ -171,12 +240,18 @@ class StimQECSimulator:
         - If Stim is available and code is small_surface: use round-wise Stim sampling.
         - Otherwise: use deterministic scaffold sampling.
         """
-        if stim is not None and self.config.code == "small_surface":
+        if stim is not None and self.config.code in ("code_9_1_3", "small_surface"):
             try:
                 hist = self._simulate_detector_history_stim_small_surface(schedule)
                 return hist, "stim_roundwise_small_surface"
             except Exception as exc:
                 print(f"[WARN] Stim backend failed; fallback to scaffold. reason={exc}")
+        if stim is not None and self.config.code == "code_4_2_2":
+            try:
+                hist = self._simulate_detector_history_stim_422(schedule)
+                return hist, "stim_roundwise_4_2_2"
+            except Exception as exc:
+                print(f"[WARN] Stim 4_2_2 backend failed; fallback to scaffold. reason={exc}")
 
         hist = self._simulate_detector_history_scaffold(schedule)
         return hist, "scaffold"
@@ -242,7 +317,7 @@ class StimQECSimulator:
         try:
             return stim.Circuit.generated(
                 "surface_code:rotated_memory_x",
-                distance=self.config.distance,
+                distance=3 if self.config.code == "code_9_1_3" else self.config.distance,
                 rounds=1,
                 after_clifford_depolarization=p_total,
                 before_round_data_depolarization=p_total,
@@ -253,10 +328,58 @@ class StimQECSimulator:
             # Fallback for older Stim versions with fewer generator kwargs.
             return stim.Circuit.generated(
                 "surface_code:rotated_memory_x",
-                distance=self.config.distance,
+                distance=3 if self.config.code == "code_9_1_3" else self.config.distance,
                 rounds=1,
                 after_clifford_depolarization=p_total,
             )
+
+    def _build_422_round_circuit(self, p_total: float) -> Any:
+        """Build one round of a simple [[4,2,2]]-style stabilizer check circuit.
+
+        Data qubits: 0,1,2,3
+        Ancilla qubits: 4 (Z parity), 5 (X parity)
+        """
+        c = stim.Circuit()
+        c.append("R", [4, 5])
+        if p_total > 0:
+            c.append("DEPOLARIZE1", [0, 1, 2, 3], p_total)
+
+        # Measure ZZZZ parity into ancilla 4.
+        c.append("CX", [0, 4])
+        c.append("CX", [1, 4])
+        c.append("CX", [2, 4])
+        c.append("CX", [3, 4])
+
+        # Measure XXXX parity into ancilla 5.
+        c.append("H", [5])
+        c.append("CX", [5, 0])
+        c.append("CX", [5, 1])
+        c.append("CX", [5, 2])
+        c.append("CX", [5, 3])
+        c.append("H", [5])
+
+        c.append("M", [4, 5])
+        c.append("DETECTOR", [stim.target_rec(-1)])  # X stabilizer outcome
+        c.append("DETECTOR", [stim.target_rec(-2)])  # Z stabilizer outcome
+        c.append("TICK")
+        return c
+
+    def _simulate_detector_history_stim_422(self, schedule: dict[str, Any]) -> np.ndarray:
+        """Round-wise Stim sampling for [[4,2,2]] backend."""
+        all_rounds: list[np.ndarray] = []
+        for r in range(self.config.rounds):
+            px, py, pz = self._round_probs(schedule, r)
+            p_total = min(1.0, max(0.0, px + py + pz))
+            circuit = self._build_422_round_circuit(p_total)
+            sampler = circuit.compile_detector_sampler(seed=self.config.seed + r)
+            det = sampler.sample(self.config.shots, append_observables=False)
+            det = np.asarray(det, dtype=np.uint8)
+            if det.ndim != 2:
+                raise RuntimeError(f"Unexpected detector sample shape at round {r}: {det.shape}")
+            if det.shape[1] != 2:
+                raise RuntimeError(f"Expected 2 detectors for [[4,2,2]], got {det.shape[1]}.")
+            all_rounds.append(det)
+        return np.stack(all_rounds, axis=1)
 
     def _simulate_measurements_stub(self, detector_history: np.ndarray) -> np.ndarray:
         """Create placeholder measurement history when user requests it."""
@@ -292,7 +415,7 @@ class StimQECSimulator:
     def _resolve_output_path(self) -> Path:
         if self.config.out:
             return Path(self.config.out)
-        return Path("subtask1_stim_qec") / f"stim_{self.config.code}_seed{self.config.seed}.npz"
+        return Path("subtask1_stim_qec") / "subtask1_data" / f"stim_{self.config.code}.npz"
 
     def _save_result(
         self,
@@ -321,7 +444,8 @@ def main() -> None:
         seed=args.seed,
         schedule_file=args.schedule_file,
         out=args.out,
-        distance=args.distance,
+        circuit_out=args.circuit_out,
+        distance=3 if args.code == "code_9_1_3" else args.distance,
         save_measurements=args.save_measurements,
         strict=args.strict,
     )
