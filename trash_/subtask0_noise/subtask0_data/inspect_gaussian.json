@@ -1,0 +1,24 @@
+{
+  "input_file": "subtask0_noise/subtask0_data/noise_gaussian.npz",
+  "noise_model": "gaussian",
+  "seed": 42,
+  "shape": [
+    128,
+    2048
+  ],
+  "mean_empirical": -6.248728593286755e-07,
+  "mean_target": 0.0,
+  "mean_status": "PASS",
+  "var_empirical": 0.024152254076849535,
+  "var_target": null,
+  "var_status": "PASS",
+  "skew_empirical": 0.0038731751077648855,
+  "skew_target": 0.0,
+  "skew_status": "PASS",
+  "acf_mismatch": 0.021908308437796002,
+  "acf_status": "PASS",
+  "psd_mismatch": 0.13647352469202848,
+  "psd_status": "PASS",
+  "peak_freq_empirical": 5.097509765625,
+  "peak_freq_target": 5.0
+}

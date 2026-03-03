@@ -1,0 +1,32 @@
+{
+  "input_file": "subtask1_stim_qec/subtask1_data/stim_code_4_2_2.npz",
+  "code": "code_4_2_2",
+  "seed": 43,
+  "shape": {
+    "shots": 128,
+    "rounds": 5,
+    "n_detectors_per_round": 2
+  },
+  "binary_check": {
+    "is_binary": true,
+    "unique_values": [
+      0,
+      1
+    ]
+  },
+  "global_trigger_rate": 0.25859375,
+  "per_round_trigger_rate": [
+    0.28125,
+    0.26171875,
+    0.26171875,
+    0.26171875,
+    0.2265625
+  ],
+  "temporal_autocorr_round_rate_lag0_to_lag4": [
+    1.0,
+    -0.007782101167315269,
+    -0.02075226977950718,
+    -0.04669260700389101,
+    -2.3132295719844356
+  ]
+}

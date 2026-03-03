@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "schedule_type": "per_round",
-  "rounds": 5,
-  "default": {"p_x": 0.010, "p_y": 0.0, "p_z": 0.0},
-  "overrides": {}
-}
