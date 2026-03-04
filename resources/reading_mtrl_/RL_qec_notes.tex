@@ -434,4 +434,54 @@ A reader can reproduce the result by:
 \item Using $B+B^\dagger=A^2$ and the identity \eqref{eq:doublecomm_id} to reach the compact form \eqref{eq:rhoout2_compact}.
 \item Ensemble-averaging and expanding in a Pauli basis to obtain \eqref{eq:main} with $\Gamma_{ab}$ given by \eqref{eq:Gamma}.
 \end{enumerate}
+
+\section{Google's tech details in RL interface}
+
+This section summarizes the RL data interface used in \emph{Reinforcement learning control of quantum error correction} (Google Quantum AI and collaborators, Dec. 8, 2025), aligned with the $(a_t,s_t,r_t)$ notation.
+
+\subsection*{Action $a_t$}
+At learning epoch $t$, the agent samples full control-policy vectors from a Gaussian distribution over all learnable control parameters. A sampled vector is applied to the classical controller and kept fixed while collecting a batch of QEC shots/cycles. Therefore $a_t$ is not a per-gate online action; it is a full parameter setting for one candidate policy.
+
+\subsection*{Observation $s_t$}
+The direct environment feedback is detector data from QEC:
+\begin{itemize}
+\item binary detector events (parity flips),
+\item aggregated into detector-wise detection rates (DR) over finite shots/cycles.
+\end{itemize}
+Operationally, for candidate $k$ in epoch $t$, one can view
+\[
+s_{t,k}=\big(\widehat{\mathrm{DR}}_{t,k,1},\ldots,\widehat{\mathrm{DR}}_{t,k,m}\big),
+\]
+where $m$ is the number of detector groups (after optional time-translation grouping).
+
+Important detail: in this implementation the policy is mainly parameter-exploring (distribution update over control vectors), not an explicitly state-conditioned neural policy of the form $a_t=\pi_\theta(s_t)$.
+
+\subsection*{Reward $r_t$ from $s_t$}
+Google optimizes a surrogate objective based on detector statistics:
+\[
+C=\hat{\mathbb{E}}[D],
+\]
+the average detection-event rate (or equivalently a multi-objective detector-wise form). Lower detector-event rates imply better reward. A consistent scalar choice is
+\[
+r_{t,k}=-C_{t,k},
+\]
+and in multi-objective form one can use $r_{t,k,i}=-\widehat{\mathrm{DR}}_{t,k,i}$ with factor-graph-aware gradient masking.
+
+Decoded logical error rate (LER) is used periodically for evaluation/benchmarking; the main training signal is from detector events and DR.
+
+\subsection*{Are Steane stabilizer histories sufficient to reproduce this flow?}
+Yes, in principle: full stabilizer measurement histories are sufficient up to deterministic transformations.
+
+Given history data plus schedule metadata, detector-event streams can be constructed by parity/XOR rules (e.g., time-difference events and boundary detectors), then aggregated into DR statistics used as $s_t$ and into reward via $r=-C$.
+
+For practical equivalence to the Google flow, the following pieces are needed:
+\begin{enumerate}
+\item A complete detector definition for the specific circuit (including boundary/time-edge detectors).
+\item Transformation from raw stabilizer measurements to detector events.
+\item DR estimation over many shots/cycles per candidate policy.
+\item Optional grouping of time-translation-equivalent detectors to keep reward dimension $O(d^2)$ for memory experiments.
+\item Detector-to-control-parameter mapping (factor-graph sparsity) for efficient gradient estimation.
+\end{enumerate}
+
+Hence, raw stabilizer histories are the right primitive data; the missing layer is the detector construction and aggregation pipeline.
 \end{document}
