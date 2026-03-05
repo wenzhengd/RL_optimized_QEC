@@ -35,13 +35,18 @@ Key features:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import logging
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
 import stim
-from noise_engine import NoiseModel
+try:
+    from noise_engine import NoiseModel
+except ModuleNotFoundError:
+    # Package import path, e.g. `from quantum_simulation.steane_code_simulator import ...`
+    from quantum_simulation.noise_engine import NoiseModel
 
 
 LOGGER = logging.getLogger(__name__)
@@ -597,6 +602,7 @@ def steane_code_exp_sequential(
     shots: int = 100,
     syndrome_mode: Literal["MV", "DE"] = "MV",
     noise: Optional[NoiseModel] = None,
+    shot_workers: int = 1,
 ) -> list[int]:
     """
     运行顺序稳定子调度的端到端 Steane QEC 实验。
@@ -621,19 +627,39 @@ def steane_code_exp_sequential(
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
 
-    results: list[int] = []
-    for _ in range(shots):
-        success, _ = _run_single_shot_sequential(
-            initial_state=initial_state,
-            meas_basis=meas_basis,
-            n_steps=n_steps,
-            syndrome_mode=syndrome_mode,
-            noise=noise,
-            save_trace=False,
-        )
-        results.append(int(success))
+    # Fast single-thread path keeps overhead minimal for tiny shot counts.
+    if int(shot_workers) <= 1 or int(shots) <= 1:
+        results: list[int] = []
+        for _ in range(shots):
+            success, _ = _run_single_shot_sequential(
+                initial_state=initial_state,
+                meas_basis=meas_basis,
+                n_steps=n_steps,
+                syndrome_mode=syndrome_mode,
+                noise=noise,
+                save_trace=False,
+            )
+            results.append(int(success))
+        return results
 
-    return results
+    # Thread-parallel shot execution:
+    # each shot uses its own TableauSimulator instance, so this is independent.
+    # We keep process-local threads to avoid pickling heavy noise model objects.
+    n_workers = max(1, min(int(shot_workers), int(shots)))
+    with ThreadPoolExecutor(max_workers=n_workers) as ex:
+        futures = [
+            ex.submit(
+                _run_single_shot_sequential,
+                initial_state,
+                meas_basis,
+                n_steps,
+                syndrome_mode,
+                noise,  # type: ignore[arg-type]
+                False,
+            )
+            for _ in range(shots)
+        ]
+        return [int(f.result()[0]) for f in futures]
 
 
 def steane_code_exp_sequential_with_trace(
@@ -643,6 +669,7 @@ def steane_code_exp_sequential_with_trace(
     shots: int = 100,
     syndrome_mode: Literal["MV", "DE"] = "MV",
     noise: Optional[NoiseModel] = None,
+    shot_workers: int = 1,
 ) -> dict[str, Any]:
     """运行实验并返回每个 shot 的中间探测轨迹。"""
     if noise is None:
@@ -650,9 +677,12 @@ def steane_code_exp_sequential_with_trace(
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
 
+    # Keep trace mode single-threaded for determinism and easier debugging.
+    # Parallel trace collection is possible but tends to complicate ordering and
+    # reproducibility; RL training should use the non-trace fast path anyway.
+    _ = shot_workers
     results: list[int] = []
     traces: list[dict[str, Any]] = []
-
     for shot_index in range(shots):
         success, trace = _run_single_shot_sequential(
             initial_state=initial_state,
@@ -908,6 +938,7 @@ class SteaneQECSimulator:
         n_steps: int = 60,
         shots: int = 100,
         syndrome_mode: Literal["MV", "DE"] = "MV",
+        shot_workers: int = 1,
     ) -> dict[str, Any]:
         """运行完整实验并缓存最近一次结果。
 
@@ -921,12 +952,14 @@ class SteaneQECSimulator:
             shots=shots,
             syndrome_mode=syndrome_mode,
             noise=self.noise,
+            shot_workers=shot_workers,
         )
         out = {
             "initial_state": initial_state,
             "meas_basis": meas_basis,
             "n_steps": n_steps,
             "shots": shots,
+            "shot_workers": int(shot_workers),
             "syndrome_mode": syndrome_mode,
             "results": results,
             "success_rate": float(np.mean(results)) if results else 0.0,
@@ -941,6 +974,7 @@ class SteaneQECSimulator:
         n_steps: int = 60,
         shots: int = 100,
         syndrome_mode: Literal["MV", "DE"] = "MV",
+        shot_workers: int = 1,
     ) -> dict[str, Any]:
         """运行完整实验并返回每个 shot 的中间轨迹。"""
         out = steane_code_exp_sequential_with_trace(
@@ -950,6 +984,7 @@ class SteaneQECSimulator:
             shots=shots,
             syndrome_mode=syndrome_mode,
             noise=self.noise,
+            shot_workers=shot_workers,
         )
         self._last_run = out
         return out
@@ -968,6 +1003,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--meas-basis", default="Z", choices=["X", "Y", "Z"])
     parser.add_argument("--n-steps", type=int, default=60, help="Total syndrome-measurement steps.")
     parser.add_argument("--shots", type=int, default=200, help="Number of Monte-Carlo shots.")
+    parser.add_argument("--shot-workers", type=int, default=1, help="Parallel workers across shots (summary mode).")
     parser.add_argument(
         "--mode",
         default="MV",
@@ -1066,6 +1102,7 @@ def main() -> None:
         n_steps=args.n_steps,
         shots=args.shots,
         syndrome_mode=args.mode,
+        shot_workers=args.shot_workers,
     )
 
     print("Steane sequential-QEC summary")
@@ -1073,6 +1110,7 @@ def main() -> None:
     print(f"  meas_basis:    {args.meas_basis}")
     print(f"  n_steps:       {args.n_steps}")
     print(f"  shots:         {args.shots}")
+    print(f"  shot_workers:  {args.shot_workers}")
     print(f"  mode:          {args.mode}")
     print(f"  success_rate:  {summary['success_rate']:.4f}")
 
