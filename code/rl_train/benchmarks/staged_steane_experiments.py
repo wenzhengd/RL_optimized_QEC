@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Sequence
 
 import numpy as np
 
+from quantum_simulation.noise_channels import available_steane_noise_channels
+
+from ..codes.factory import available_code_families
 from .eval_steane_ppo import parse_args as parse_eval_args
 from .eval_steane_ppo import print_report, run_benchmark
 
@@ -39,7 +42,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--stages",
         type=str,
         default="1,2,3",
-        help="Comma-separated stage IDs to run from {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}.",
+        help=(
+            "Comma-separated stage IDs to run. Use 'all' to run all stages "
+            "from the selected stage spec source."
+        ),
+    )
+    parser.add_argument(
+        "--stage-specs-json",
+        type=str,
+        default="",
+        help=(
+            "Optional JSON file path providing custom stage specs. "
+            "Schema: {'stages': {'id': {'name','description','seed_list','overrides'}}}."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -59,6 +74,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--print-each-run",
         action="store_true",
         help="Print full per-run report blocks in addition to compact summary.",
+    )
+    parser.add_argument(
+        "--code-family",
+        choices=list(available_code_families()),
+        default=None,
+        help="Optional global code family override applied to every selected stage.",
+    )
+    parser.add_argument(
+        "--steane-noise-channel",
+        choices=list(available_steane_noise_channels()),
+        default=None,
+        help="Optional global Steane noise channel override applied to every selected stage.",
+    )
+    parser.add_argument(
+        "--base-overrides-json",
+        type=str,
+        default="",
+        help=(
+            "Optional JSON file path containing eval_steane_ppo arg overrides "
+            "applied to every selected stage."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -489,6 +525,68 @@ def _apply_overrides(base, overrides: Dict[str, Any]):
     return base
 
 
+def _build_base_overrides(args: argparse.Namespace) -> Dict[str, Any]:
+    """Build global overrides shared by all selected stages."""
+    out: Dict[str, Any] = {}
+    if args.base_overrides_json:
+        p = Path(args.base_overrides_json)
+        if not p.exists():
+            raise FileNotFoundError(f"--base-overrides-json not found: {p}")
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("--base-overrides-json must contain a JSON object.")
+        out.update(payload)
+    if args.code_family is not None:
+        out["code_family"] = str(args.code_family)
+    if args.steane_noise_channel is not None:
+        out["steane_noise_channel"] = str(args.steane_noise_channel)
+    return out
+
+
+def _parse_stage_ids(stages_arg: str, available_ids: Sequence[str]) -> List[str]:
+    """Parse requested stage IDs from CLI argument."""
+    text = str(stages_arg).strip()
+    if text.lower() == "all":
+        return list(available_ids)
+    return [s.strip() for s in text.split(",") if s.strip()]
+
+
+def _load_stage_specs_from_json(path: str, seed_offset: int, device: str) -> Dict[str, StageSpec]:
+    """Load stage specs from a JSON config file."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"--stage-specs-json not found: {p}")
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("--stage-specs-json must contain a JSON object.")
+    raw_stages = payload.get("stages", payload)
+    if not isinstance(raw_stages, dict) or not raw_stages:
+        raise ValueError("--stage-specs-json must provide a non-empty stages mapping.")
+
+    out: Dict[str, StageSpec] = {}
+    for sid, stage_payload in raw_stages.items():
+        if not isinstance(stage_payload, dict):
+            raise ValueError(f"Stage '{sid}' must be a JSON object.")
+        name = str(stage_payload.get("name", sid))
+        description = str(stage_payload.get("description", ""))
+        raw_seed_list = stage_payload.get("seed_list")
+        if not isinstance(raw_seed_list, list) or not raw_seed_list:
+            raise ValueError(f"Stage '{sid}' must define a non-empty 'seed_list' array.")
+        seed_list = [int(x) + int(seed_offset) for x in raw_seed_list]
+        overrides = stage_payload.get("overrides", {})
+        if not isinstance(overrides, dict):
+            raise ValueError(f"Stage '{sid}' field 'overrides' must be a JSON object.")
+        merged_overrides = dict(overrides)
+        merged_overrides.setdefault("device", str(device))
+        out[str(sid)] = StageSpec(
+            name=name,
+            description=description,
+            seed_list=seed_list,
+            overrides=merged_overrides,
+        )
+    return out
+
+
 def _aggregate_stage_metrics(run_reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """Compute mean/std summaries for core metrics across seeds."""
     dr_imp = np.asarray([r["improvement_vs_fixed_zero"]["detector_rate"] for r in run_reports], dtype=float)
@@ -559,18 +657,37 @@ def _compact_stage_line(stage_name: str, agg: Dict[str, Dict[str, float]]) -> st
 
 def main() -> None:
     args = parse_args()
-    stage_order = [s.strip() for s in args.stages.split(",") if s.strip()]
-    stage_specs = _default_stage_specs(seed_offset=args.seed_offset, device=args.device)
+    if args.stage_specs_json:
+        stage_specs = _load_stage_specs_from_json(
+            path=args.stage_specs_json,
+            seed_offset=args.seed_offset,
+            device=args.device,
+        )
+        stage_spec_source = str(args.stage_specs_json)
+    else:
+        stage_specs = _default_stage_specs(seed_offset=args.seed_offset, device=args.device)
+        stage_spec_source = "default"
+    stage_order = _parse_stage_ids(args.stages, available_ids=list(stage_specs.keys()))
+    base_overrides = _build_base_overrides(args)
     unknown = [s for s in stage_order if s not in stage_specs]
     if unknown:
-        raise ValueError(f"Unknown stage ids: {unknown}. Allowed: 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15.")
+        raise ValueError(
+            f"Unknown stage ids: {unknown}. Allowed from current stage spec source: {list(stage_specs.keys())}."
+        )
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    all_stage_reports: Dict[str, Any] = {"stages": {}}
+    all_stage_reports: Dict[str, Any] = {
+        "stage_spec_source": stage_spec_source,
+        "selected_stage_ids": stage_order,
+        "base_overrides": base_overrides,
+        "stages": {},
+    }
     if args.seed_workers < 1:
         raise ValueError("--seed-workers must be >= 1.")
+    if base_overrides:
+        print(f"Applying global overrides to all selected stages: {base_overrides}")
 
     for sid in stage_order:
         spec = stage_specs[sid]
@@ -578,6 +695,8 @@ def main() -> None:
         print(spec.description)
 
         run_reports: List[Dict[str, Any]] = []
+        merged_overrides = dict(spec.overrides)
+        merged_overrides.update(base_overrides)
         stage_dir = out_dir / spec.name
         stage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -586,7 +705,7 @@ def main() -> None:
             for seed in spec.seed_list:
                 report = _run_single_seed(
                     seed=int(seed),
-                    overrides=spec.overrides,
+                    overrides=merged_overrides,
                     save_json=str(stage_dir / f"seed_{seed}.json"),
                 )
                 run_reports.append(report)
@@ -605,7 +724,7 @@ def main() -> None:
                     ex.submit(
                         _run_single_seed,
                         int(seed),
-                        spec.overrides,
+                        merged_overrides,
                         str(stage_dir / f"seed_{seed}.json"),
                     ): int(seed)
                     for seed in spec.seed_list
@@ -632,7 +751,7 @@ def main() -> None:
         all_stage_reports["stages"][spec.name] = {
             "description": spec.description,
             "seeds": spec.seed_list,
-            "config_overrides": spec.overrides,
+            "config_overrides": merged_overrides,
             "aggregate": agg,
             "runs": run_reports,
         }

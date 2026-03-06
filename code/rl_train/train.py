@@ -400,7 +400,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steane-p-clip-max", type=float, default=0.3)
     parser.add_argument(
         "--steane-noise-channel",
-        choices=["auto", "google_global", "google_gate_specific", "idle_depolarizing", "parametric_google"],
+        choices=[
+            "auto",
+            "google_global",
+            "google_gate_specific",
+            "idle_depolarizing",
+            "parametric_google",
+            "correlated_pauli_noise_channel",
+        ],
         default="auto",
     )
     parser.add_argument("--steane-idle-p-total-per-idle", type=float, default=0.0)

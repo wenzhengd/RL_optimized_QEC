@@ -133,7 +133,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--steane-p-clip-max", type=float, default=0.3)
     parser.add_argument(
         "--steane-noise-channel",
-        choices=["auto", "google_global", "google_gate_specific", "idle_depolarizing", "parametric_google"],
+        choices=[
+            "auto",
+            "google_global",
+            "google_gate_specific",
+            "idle_depolarizing",
+            "parametric_google",
+            "correlated_pauli_noise_channel",
+        ],
         default="auto",
     )
     parser.add_argument("--steane-idle-p-total-per-idle", type=float, default=0.0)
@@ -238,7 +245,16 @@ def _evaluate_policies(
 
 
 def _rel_improvement(base: float, new: float) -> float:
-    return float((base - new) / max(1e-12, base))
+    base_f = float(base)
+    new_f = float(new)
+    eps = 1e-12
+    # Relative improvement is ill-defined when baseline is numerically zero.
+    # Use a bounded convention:
+    #   - 0.0 when both are ~0
+    #   - -1.0 when baseline is ~0 but new is worse (>0)
+    if base_f <= eps:
+        return 0.0 if new_f <= eps else -1.0
+    return float((base_f - new_f) / base_f)
 
 
 def _clone_args(args: argparse.Namespace) -> argparse.Namespace:

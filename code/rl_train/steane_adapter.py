@@ -55,12 +55,14 @@ class SteaneAdapterConfig:
     #   google_global / google_gate_specific: paper-style gate depolarizing models.
     #   idle_depolarizing: action-independent idle Pauli channel.
     #   parametric_google: google-style channel with external regime knobs.
+    #   correlated_pauli_noise_channel: custom temporally-correlated idle Pauli channel.
     noise_channel: Literal[
         "auto",
         "google_global",
         "google_gate_specific",
         "idle_depolarizing",
         "parametric_google",
+        "correlated_pauli_noise_channel",
     ] = "auto"
     # Idle depolarizing parameters (used when noise_channel=idle_depolarizing).
     idle_p_total_per_idle: float = 0.0

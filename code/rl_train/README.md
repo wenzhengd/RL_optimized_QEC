@@ -100,6 +100,46 @@ python -m rl_train.benchmarks.staged_steane_experiments \
   --output-dir code/data_generated/steane_staged_runs
 ```
 
+Apply a global code/noise override to all selected stages:
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 1,4,6 \
+  --code-family steane \
+  --steane-noise-channel parametric_google \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_parametric
+```
+
+Use a JSON file for global staged overrides (forwarded to `eval_steane_ppo` args):
+
+```json
+{
+  "code_family": "steane",
+  "steane_noise_channel": "parametric_google",
+  "steane_channel_regime_a": 1.2,
+  "steane_channel_regime_b": 0.8
+}
+```
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 8,9,10 \
+  --base-overrides-json path/to/stage_overrides.json \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_regime
+```
+
+Use a custom stage-spec JSON (config-driven staged runs, no Python edits):
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stage-specs-json code/rl_train/benchmarks/examples/stage_specs_parametric_regime.json \
+  --stages all \
+  --seed-workers 2 \
+  --output-dir code/data_generated/steane_custom_stage_specs
+```
+
 Run the added power-focused stage only:
 
 ```bash
@@ -215,9 +255,36 @@ In `train.py`, replace:
   - `--steane-noise-channel idle_depolarizing`: action-independent idle Pauli channel.
   - `--steane-noise-channel parametric_google`: Google-like channel with regime knobs
     `--steane-channel-regime-a` and `--steane-channel-regime-b`.
+  - `--steane-noise-channel correlated_pauli_noise_channel`: custom temporally correlated
+    idle Pauli channel (action-aware and regime-aware).
   - idle channel parameters:
     `--steane-idle-p-total-per-idle`, `--steane-idle-px-weight`, `--steane-idle-py-weight`,
     `--steane-idle-pz-weight`.
+
+Quick smoke example for the custom correlated channel:
+
+```bash
+python -m rl_train.benchmarks.eval_steane_ppo \
+  --total-timesteps 8 \
+  --rollout-steps 2 \
+  --steane-n-rounds 1 \
+  --steane-shots-per-step 2 \
+  --post-eval-episodes 1 \
+  --eval-steane-shots-per-step 2 \
+  --steane-noise-channel correlated_pauli_noise_channel \
+  --steane-channel-regime-a 1.0 \
+  --steane-channel-regime-b 1.5
+```
+
+Where to plug in your own correlated physics model:
+
+- Edit exactly this function:
+  [code/quantum_simulation/noise_channels.py](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_channels.py)
+  `correlated_pauli_model_kernel(...)`
+- Keep output contract: return one idle-window total Pauli probability
+  `p_total(q,t)` clipped in `[0, p_clip_max]`.
+- Keep axis split/Stim integration unchanged unless you intentionally want
+  to alter X/Y/Z composition and injection mechanics.
 - Two stepping modes:
   - `candidate_eval`: each RL step runs a full `n_rounds` memory experiment.
   - `online_rounds`: each RL step runs exactly 1 round; simulator returns `done=True` after `n_rounds` steps.
