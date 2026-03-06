@@ -93,6 +93,8 @@ class SteaneOnlineSteeringSimulator:
         self._t = 0
         # Counts RL steps inside current episode (for online round mode).
         self._episode_step = 0
+        # Reused simulator instance; only noise model is swapped per RL step.
+        self._sim: SteaneQECSimulator | None = None
 
     @property
     def obs_dim(self) -> int:
@@ -222,7 +224,11 @@ class SteaneOnlineSteeringSimulator:
             raise ValueError(f"Unknown control_mode: {self.cfg.control_mode}")
         p_1q, p_2q = noise.effective_error_rates(0.0)
 
-        sim = SteaneQECSimulator(noise=noise)
+        if self._sim is None:
+            self._sim = SteaneQECSimulator(noise=noise)
+        else:
+            self._sim.noise = noise
+        sim = self._sim
         n_rounds_eval = self._rounds_this_step()
         n_steps = int(n_rounds_eval) * 6
         if self.cfg.collect_traces:

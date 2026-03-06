@@ -9,7 +9,9 @@ Stages follow a practical progression:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -37,7 +39,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--stages",
         type=str,
         default="1,2,3",
-        help="Comma-separated stage IDs to run from {1,2,3,4}.",
+        help="Comma-separated stage IDs to run from {1,2,3,4,5,6}.",
     )
     parser.add_argument(
         "--output-dir",
@@ -47,6 +49,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--seed-offset", type=int, default=0)
+    parser.add_argument(
+        "--seed-workers",
+        type=int,
+        default=1,
+        help="Parallel worker processes over seeds inside each stage. 1 means sequential.",
+    )
     parser.add_argument(
         "--print-each-run",
         action="store_true",
@@ -135,6 +143,58 @@ def _default_stage_specs(seed_offset: int, device: str) -> Dict[str, StageSpec]:
                 "steane_collect_traces": False,
             },
         ),
+        "5": StageSpec(
+            name="stage5_power_stats",
+            description=(
+                "Statistics-focused run: keep training setup fixed, increase seeds "
+                "and evaluation sampling to improve confidence in effect estimates."
+            ),
+            seed_list=[60 + seed_offset + i for i in range(20)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Keep training workload identical to stage4 for fair ablation.
+                "total_timesteps": 512,
+                "rollout_steps": 32,
+                "steane_n_rounds": 4,
+                "steane_shots_per_step": 4,
+                # Increase only statistics/evaluation budget.
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "6": StageSpec(
+            name="stage6_trace_finetune",
+            description=(
+                "Signal-quality run: fast phase-1 training plus short trace-based "
+                "phase-2 finetune, with stronger evaluation statistics."
+            ),
+            seed_list=[90 + seed_offset + i for i in range(12)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Phase-1 fast training (same family as stage4/5 for fair comparison).
+                "total_timesteps": 512,
+                "rollout_steps": 32,
+                "steane_n_rounds": 4,
+                "steane_shots_per_step": 4,
+                # Phase-2 trace-based finetune (small budget).
+                "trace_finetune_timesteps": 64,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 8,
+                "trace_finetune_n_rounds": 4,
+                # Evaluation budget.
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                # Optional trace-only eval for higher-fidelity detector metric.
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
     }
 
 
@@ -167,6 +227,36 @@ def _aggregate_stage_metrics(run_reports: List[Dict[str, Any]]) -> Dict[str, Dic
     }
 
 
+def _run_single_seed(
+    seed: int,
+    overrides: Dict[str, Any],
+    save_json: str,
+) -> Dict[str, Any]:
+    """Worker entry for one seed benchmark run.
+
+    Uses process-level parallelism to bypass Python GIL limits in simulator-heavy loops.
+    """
+    # Avoid thread oversubscription inside each process.
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+    try:
+        import torch
+
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
+    except Exception:
+        # Keep benchmark runnable even if torch thread controls are unavailable.
+        pass
+
+    run_args = parse_eval_args([])
+    run_args = _apply_overrides(run_args, overrides)
+    run_args.seed = int(seed)
+    run_args.save_json = str(save_json)
+    return run_benchmark(run_args)
+
+
 def _compact_stage_line(stage_name: str, agg: Dict[str, Dict[str, float]]) -> str:
     """Single-line summary to quickly compare stage outcomes."""
     dr_m = 100.0 * agg["improvement_vs_fixed_zero"]["detector_rate_mean"]
@@ -189,12 +279,15 @@ def main() -> None:
     stage_specs = _default_stage_specs(seed_offset=args.seed_offset, device=args.device)
     unknown = [s for s in stage_order if s not in stage_specs]
     if unknown:
-        raise ValueError(f"Unknown stage ids: {unknown}. Allowed: 1,2,3,4.")
+        raise ValueError(f"Unknown stage ids: {unknown}. Allowed: 1,2,3,4,5,6.")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     all_stage_reports: Dict[str, Any] = {"stages": {}}
+    if args.seed_workers < 1:
+        raise ValueError("--seed-workers must be >= 1.")
+
     for sid in stage_order:
         spec = stage_specs[sid]
         print(f"\n=== {spec.name} ===")
@@ -204,22 +297,50 @@ def main() -> None:
         stage_dir = out_dir / spec.name
         stage_dir.mkdir(parents=True, exist_ok=True)
 
-        for seed in spec.seed_list:
-            # Start from eval script defaults to keep behavior aligned.
-            run_args = parse_eval_args([])
-            run_args = _apply_overrides(run_args, spec.overrides)
-            run_args.seed = int(seed)
-            run_args.save_json = str(stage_dir / f"seed_{seed}.json")
+        workers = min(int(args.seed_workers), len(spec.seed_list))
+        if workers <= 1:
+            for seed in spec.seed_list:
+                report = _run_single_seed(
+                    seed=int(seed),
+                    overrides=spec.overrides,
+                    save_json=str(stage_dir / f"seed_{seed}.json"),
+                )
+                run_reports.append(report)
+                print(
+                    f"seed={seed}: "
+                    f"learned_success={100.0 * report['eval_metrics']['learned']['success_rate']:.2f}%, "
+                    f"improve(LER~)={100.0 * report['improvement_vs_fixed_zero']['ler_proxy']:+.2f}%"
+                )
+                if args.print_each_run:
+                    print_report(report)
+        else:
+            print(f"Running seeds in parallel with {workers} workers.")
+            reports_by_seed: Dict[int, Dict[str, Any]] = {}
+            with ProcessPoolExecutor(max_workers=workers) as ex:
+                futures = {
+                    ex.submit(
+                        _run_single_seed,
+                        int(seed),
+                        spec.overrides,
+                        str(stage_dir / f"seed_{seed}.json"),
+                    ): int(seed)
+                    for seed in spec.seed_list
+                }
+                for fut in as_completed(futures):
+                    seed = futures[fut]
+                    report = fut.result()
+                    reports_by_seed[seed] = report
+                    print(
+                        f"seed={seed}: "
+                        f"learned_success={100.0 * report['eval_metrics']['learned']['success_rate']:.2f}%, "
+                        f"improve(LER~)={100.0 * report['improvement_vs_fixed_zero']['ler_proxy']:+.2f}%"
+                    )
 
-            report = run_benchmark(run_args)
-            run_reports.append(report)
-            print(
-                f"seed={seed}: "
-                f"learned_success={100.0 * report['eval_metrics']['learned']['success_rate']:.2f}%, "
-                f"improve(LER~)={100.0 * report['improvement_vs_fixed_zero']['ler_proxy']:+.2f}%"
-            )
+            # Keep downstream aggregation/report order deterministic.
+            run_reports = [reports_by_seed[int(seed)] for seed in spec.seed_list]
             if args.print_each_run:
-                print_report(report)
+                for report in run_reports:
+                    print_report(report)
 
         agg = _aggregate_stage_metrics(run_reports)
         print(_compact_stage_line(spec.name, agg))

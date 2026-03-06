@@ -42,6 +42,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0,
         help="If >0, override shots_per_step only during post-train evaluation.",
     )
+    parser.add_argument(
+        "--trace-eval-episodes",
+        type=int,
+        default=0,
+        help="If >0, run an additional trace-based evaluation pass.",
+    )
+    parser.add_argument(
+        "--trace-eval-steane-shots-per-step",
+        type=int,
+        default=0,
+        help="If >0, override shots_per_step only for trace-based evaluation.",
+    )
     parser.add_argument("--save-json", type=str, default="")
 
     # PPO hyperparameters.
@@ -53,6 +65,42 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ppo-minibatch-size", type=int, default=128)
     parser.add_argument("--ppo-ent-coef", type=float, default=0.01)
     parser.add_argument("--action-limit", type=float, default=2.0)
+    parser.add_argument(
+        "--trace-finetune-timesteps",
+        type=int,
+        default=0,
+        help="If >0, run a second PPO phase using trace-enabled simulator feedback.",
+    )
+    parser.add_argument(
+        "--trace-finetune-rollout-steps",
+        type=int,
+        default=0,
+        help="If >0, override rollout steps in trace finetune phase.",
+    )
+    parser.add_argument(
+        "--trace-finetune-shots-per-step",
+        type=int,
+        default=0,
+        help="If >0, override shots_per_step in trace finetune phase.",
+    )
+    parser.add_argument(
+        "--trace-finetune-n-rounds",
+        type=int,
+        default=0,
+        help="If >0, override n_rounds in trace finetune phase.",
+    )
+    parser.add_argument(
+        "--trace-finetune-learning-rate",
+        type=float,
+        default=0.0,
+        help="If >0, override learning rate in trace finetune phase.",
+    )
+    parser.add_argument(
+        "--trace-finetune-ent-coef",
+        type=float,
+        default=-1.0,
+        help="If >=0, override entropy coefficient in trace finetune phase.",
+    )
 
     # Steane simulator controls.
     parser.add_argument("--steane-n-rounds", type=int, default=25)
@@ -150,16 +198,16 @@ def _evaluate_policies(
     action_limit: float,
     episodes: int,
     eval_shots_per_step: int = 0,
+    eval_collect_traces: bool = False,
 ) -> Dict[str, Dict[str, float]]:
     """Run fair learned/fixed/random comparison with drift-reset evaluation sims."""
-    if int(eval_shots_per_step) > 0:
-        eval_cfg = replace(
-            steane_cfg,
-            reset_drift_on_episode=True,
-            shots_per_step=int(eval_shots_per_step),
-        )
-    else:
-        eval_cfg = replace(steane_cfg, reset_drift_on_episode=True)
+    eval_shots = int(eval_shots_per_step) if int(eval_shots_per_step) > 0 else int(steane_cfg.shots_per_step)
+    eval_cfg = replace(
+        steane_cfg,
+        reset_drift_on_episode=True,
+        shots_per_step=eval_shots,
+        collect_traces=bool(eval_collect_traces),
+    )
     sim_learned = SteaneOnlineSteeringSimulator(eval_cfg)
     sim_fixed = SteaneOnlineSteeringSimulator(eval_cfg)
     sim_random = SteaneOnlineSteeringSimulator(eval_cfg)
@@ -190,14 +238,51 @@ def _rel_improvement(base: float, new: float) -> float:
     return float((base - new) / max(1e-12, base))
 
 
+def _clone_args(args: argparse.Namespace) -> argparse.Namespace:
+    """Create a mutable copy of argparse namespace."""
+    return argparse.Namespace(**vars(args))
+
+
+def _build_trace_finetune_args(base_args: argparse.Namespace) -> argparse.Namespace:
+    """Build phase-2 trace-finetune args from phase-1 args."""
+    ft = _clone_args(base_args)
+    ft.steane_collect_traces = True
+    if int(base_args.trace_finetune_rollout_steps) > 0:
+        ft.rollout_steps = int(base_args.trace_finetune_rollout_steps)
+    if int(base_args.trace_finetune_shots_per_step) > 0:
+        ft.steane_shots_per_step = int(base_args.trace_finetune_shots_per_step)
+    if int(base_args.trace_finetune_n_rounds) > 0:
+        ft.steane_n_rounds = int(base_args.trace_finetune_n_rounds)
+    if float(base_args.trace_finetune_learning_rate) > 0.0:
+        ft.ppo_learning_rate = float(base_args.trace_finetune_learning_rate)
+    if float(base_args.trace_finetune_ent_coef) >= 0.0:
+        ft.ppo_ent_coef = float(base_args.trace_finetune_ent_coef)
+    ft.total_timesteps = int(base_args.trace_finetune_timesteps)
+    return ft
+
+
 def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
     """Execute one Steane PPO benchmark run and return structured report."""
     if args.google_paper_ppo_preset:
         apply_google_paper_ppo_preset(args)
 
+    # Phase-1: fast proxy training.
     steane_cfg, simulator, env = _build_steane_components(args)
     cfg = _build_ppo_config(args, simulator)
-    model, history = train_ppo(env, cfg)
+    model, history_phase1 = train_ppo(env, cfg)
+
+    history_trace = None
+    trace_ft_cfg = None
+    # Phase-2 (optional): trace-based finetuning for richer detector signal.
+    if int(args.trace_finetune_timesteps) > 0:
+        ft_args = _build_trace_finetune_args(args)
+        ft_steane_cfg, ft_simulator, ft_env = _build_steane_components(ft_args)
+        trace_ft_cfg = _build_ppo_config(ft_args, ft_simulator)
+        model, history_trace = train_ppo(ft_env, trace_ft_cfg, model=model)
+        # Keep final report's steane cfg aligned to phase-2 if finetune was used.
+        steane_cfg = ft_steane_cfg
+        cfg = trace_ft_cfg
+
     eval_metrics = _evaluate_policies(
         model=model,
         cfg=cfg,
@@ -207,15 +292,39 @@ def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         eval_shots_per_step=int(args.eval_steane_shots_per_step),
     )
 
+    trace_eval_metrics = None
+    if int(args.trace_eval_episodes) > 0:
+        trace_eval_metrics = _evaluate_policies(
+            model=model,
+            cfg=cfg,
+            steane_cfg=steane_cfg,
+            action_limit=args.action_limit,
+            episodes=int(args.trace_eval_episodes),
+            eval_shots_per_step=int(args.trace_eval_steane_shots_per_step),
+            eval_collect_traces=True,
+        )
+
     learned = eval_metrics["learned"]
     fixed = eval_metrics["fixed_zero"]
     random = eval_metrics["random_uniform"]
+    final_rollout_reward = (
+        float(history_trace["mean_reward_rollout"][-1])
+        if history_trace is not None
+        else float(history_phase1["mean_reward_rollout"][-1])
+    )
     report: Dict[str, Any] = {
         "args": vars(args),
         "steane_cfg": asdict(steane_cfg),
         "ppo_cfg": asdict(cfg),
-        "final_mean_rollout_reward": float(history["mean_reward_rollout"][-1]),
+        "phase1_mean_rollout_reward": float(history_phase1["mean_reward_rollout"][-1]),
+        "trace_finetune_enabled": bool(history_trace is not None),
+        "trace_finetune_ppo_cfg": asdict(trace_ft_cfg) if trace_ft_cfg is not None else None,
+        "trace_finetune_mean_rollout_reward": (
+            float(history_trace["mean_reward_rollout"][-1]) if history_trace is not None else None
+        ),
+        "final_mean_rollout_reward": final_rollout_reward,
         "eval_metrics": eval_metrics,
+        "trace_eval_metrics": trace_eval_metrics,
         "improvement_vs_fixed_zero": {
             "detector_rate": _rel_improvement(fixed["detector_rate"], learned["detector_rate"]),
             "ler_proxy": _rel_improvement(fixed["ler_proxy"], learned["ler_proxy"]),

@@ -64,10 +64,24 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --save-json code/data_generated/steane_ppo_benchmark.json
 ```
 
+Run fast-train + trace-finetune benchmark (phase-2 keeps PPO optimizer unchanged):
+
+```bash
+python -m rl_train.benchmarks.eval_steane_ppo \
+  --total-timesteps 512 \
+  --rollout-steps 32 \
+  --trace-finetune-timesteps 64 \
+  --trace-finetune-rollout-steps 16 \
+  --trace-finetune-shots-per-step 8 \
+  --post-eval-episodes 32 \
+  --eval-steane-shots-per-step 64
+```
+
 Run the staged protocol (sanity -> pilot -> scale, optional power stage):
 
 ```bash
 python -m rl_train.benchmarks.staged_steane_experiments \
+  --seed-workers 5 \
   --output-dir code/data_generated/steane_staged_runs
 ```
 
@@ -76,7 +90,17 @@ Run the added power-focused stage only:
 ```bash
 python -m rl_train.benchmarks.staged_steane_experiments \
   --stages 4 \
+  --seed-workers 5 \
   --output-dir code/data_generated/steane_staged_runs_power
+```
+
+Run the trace-finetune stage:
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 6 \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_trace_finetune
 ```
 
 Run legacy global-control baseline (all gates share one global control vector):
@@ -146,8 +170,14 @@ In `train.py`, replace:
   - `--post-eval-episodes N` compares learned PPO policy with fixed-zero policy.
   - `--eval-steane-shots-per-step K` (K>0) raises evaluation shot count only, to reduce metric noise
     without increasing training simulation cost.
+  - `--trace-eval-episodes M` enables an additional trace-based evaluation pass for higher-fidelity detector metrics.
+  - `--trace-eval-steane-shots-per-step K` controls shot count in that trace-based evaluation pass.
   - evaluation uses separate simulators with drift reset per episode to avoid phase-drift comparison bias.
   - reports detector-rate (DR) and LER proxy (`1 - success_rate`).
+- Optional phase-2 trace finetune (PPO unchanged):
+  - set `--trace-finetune-timesteps > 0` to enable a second training phase with `collect_traces=True`.
+  - use `--trace-finetune-rollout-steps`, `--trace-finetune-shots-per-step`, and
+    `--trace-finetune-n-rounds` to control phase-2 compute budget.
 - Drift time:
   - default keeps drift phase continuous across episodes.
   - set `--steane-reset-drift-on-episode` to restart drift phase at episode reset.

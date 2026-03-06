@@ -38,7 +38,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Sequence
 
 import numpy as np
 import stim
@@ -75,6 +75,34 @@ STABILIZER_SEQUENCE = [
 # - You can replace the default `NoiseModel` with
 #   `TimeDependentPauliNoiseModel` from that module without changing the
 #   experiment flow code below.
+
+
+class _ApplyCacheNoiseModel(NoiseModel):
+    """Thin wrapper that memoizes `noise.apply(circuit)` by circuit content.
+
+    In RL/Monte-Carlo loops, the same few sub-circuits are repeatedly passed to
+    the same noise model instance across many shots. Caching the transformed
+    noisy circuit avoids re-running expensive timeline/noise insertion logic.
+    """
+
+    def __init__(self, base: NoiseModel):
+        self.base = base
+        self.enabled = bool(getattr(base, "enabled", True))
+        self._cache: dict[str, stim.Circuit] = {}
+
+    def apply(self, circuit: stim.Circuit) -> stim.Circuit:
+        if not self.enabled:
+            return circuit
+        key = str(circuit)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        out = self.base.apply(circuit)
+        self._cache[key] = out
+        return out
+
+    def __getattr__(self, name: str):
+        return getattr(self.base, name)
 
 
 def encoding_circuit(log_qb_idx: int = 0) -> stim.Circuit:
@@ -383,7 +411,16 @@ def expected_result(measure_output: int, initial_state: str, meas_basis: str) ->
     return int(measure_output == expected)
 
 
-def destructive_logical_measurement(simulator: stim.TableauSimulator,meas_basis: str, tracked_x_syndromes: np.ndarray,tracked_z_syndromes: np.ndarray,pauli_frame: np.ndarray,m_idx: int,noise: NoiseModel,) -> tuple[int, int]: 
+def destructive_logical_measurement(
+    simulator: stim.TableauSimulator,
+    meas_basis: str,
+    tracked_x_syndromes: np.ndarray,
+    tracked_z_syndromes: np.ndarray,
+    pauli_frame: np.ndarray,
+    m_idx: int,
+    noise: NoiseModel,
+    logical_measurement_circuit: Optional[stim.Circuit] = None,
+) -> tuple[int, int]:
     """
     执行最终破坏性测量并输出逻辑测量 bit。
 
@@ -405,7 +442,9 @@ def destructive_logical_measurement(simulator: stim.TableauSimulator,meas_basis:
     Returns:
         `(logical_measurement_bit, updated_m_idx)`。
     """
-    simulator.do(noise.apply(measure_logical_qubits()))
+    if logical_measurement_circuit is None:
+        logical_measurement_circuit = measure_logical_qubits()
+    simulator.do(noise.apply(logical_measurement_circuit))
     r = simulator.current_measurement_record()[m_idx : m_idx + 7]
     m_idx += 7
 
@@ -448,8 +487,26 @@ def _run_single_shot_sequential(
     syndrome_mode: Literal["MV", "DE"],
     noise: NoiseModel,
     save_trace: bool = False,
+    encoding_circuit_tpl: Optional[stim.Circuit] = None,
+    prep_circuit_tpl: Optional[stim.Circuit] = None,
+    stabilizer_circuit_tpls: Optional[Sequence[stim.Circuit]] = None,
+    rotate_circuit_tpl: Optional[stim.Circuit] = None,
+    logical_measurement_circuit_tpl: Optional[stim.Circuit] = None,
 ) -> tuple[int, Optional[dict[str, Any]]]:
     """运行一个 shot，并可选保存中间轨迹。"""
+    if encoding_circuit_tpl is None:
+        encoding_circuit_tpl = encoding_circuit()
+    if prep_circuit_tpl is None:
+        prep_circuit_tpl = prepare_stab_eigenstate(initial_state)
+    if stabilizer_circuit_tpls is None:
+        stabilizer_circuit_tpls = tuple(
+            measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE
+        )
+    if rotate_circuit_tpl is None:
+        rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
+    if logical_measurement_circuit_tpl is None:
+        logical_measurement_circuit_tpl = measure_logical_qubits()
+
     simulator = stim.TableauSimulator()
     m_idx = 0
 
@@ -459,7 +516,7 @@ def _run_single_shot_sequential(
 
     prep_ok = False
     for _attempt in range(3):
-        simulator.do(noise.apply(encoding_circuit()))
+        simulator.do(noise.apply(encoding_circuit_tpl))
         state_prep_ancilla = int(simulator.current_measurement_record()[m_idx])
         m_idx += 1
         prep_ancilla_measurements.append(state_prep_ancilla)
@@ -484,7 +541,7 @@ def _run_single_shot_sequential(
             return 0, trace
         return 0, None
 
-    simulator.do(noise.apply(prepare_stab_eigenstate(initial_state)))
+    simulator.do(noise.apply(prep_circuit_tpl))
 
     histories: dict[str, list[int]] = {s["name"]: [] for s in STABILIZER_SEQUENCE}
     tracked_x_syndromes = np.zeros(3, dtype=int)
@@ -492,8 +549,9 @@ def _run_single_shot_sequential(
     pauli_frame = np.array([0, 0], dtype=int)
 
     for step in range(n_steps):
-        stab = STABILIZER_SEQUENCE[step % 6]
-        simulator.do(noise.apply(measure_single_stabilizer(stab, ancilla=8)))
+        stab_idx = step % 6
+        stab = STABILIZER_SEQUENCE[stab_idx]
+        simulator.do(noise.apply(stabilizer_circuit_tpls[stab_idx]))
         meas = int(simulator.current_measurement_record()[m_idx])
         m_idx += 1
         histories[stab["name"]].append(meas)
@@ -564,7 +622,7 @@ def _run_single_shot_sequential(
                 }
             )
 
-    simulator.do(noise.apply(rotate_to_measurement_basis(meas_basis)))
+    simulator.do(noise.apply(rotate_circuit_tpl))
     final_measurement, m_idx = destructive_logical_measurement(
         simulator=simulator,
         meas_basis=meas_basis,
@@ -573,6 +631,7 @@ def _run_single_shot_sequential(
         pauli_frame=pauli_frame,
         m_idx=m_idx,
         noise=noise,
+        logical_measurement_circuit=logical_measurement_circuit_tpl,
     )
 
     success = int(expected_result(final_measurement, initial_state, meas_basis))
@@ -623,9 +682,20 @@ def steane_code_exp_sequential(
     """
     if noise is None:
         noise = NoiseModel(enabled=False)
+    if getattr(noise, "enabled", False):
+        noise = _ApplyCacheNoiseModel(noise)
 
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
+
+    # Build immutable circuit templates once and reuse across all shots.
+    encoding_circuit_tpl = encoding_circuit()
+    prep_circuit_tpl = prepare_stab_eigenstate(initial_state)
+    stabilizer_circuit_tpls = tuple(
+        measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE
+    )
+    rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
+    logical_measurement_circuit_tpl = measure_logical_qubits()
 
     # Fast single-thread path keeps overhead minimal for tiny shot counts.
     if int(shot_workers) <= 1 or int(shots) <= 1:
@@ -638,6 +708,11 @@ def steane_code_exp_sequential(
                 syndrome_mode=syndrome_mode,
                 noise=noise,
                 save_trace=False,
+                encoding_circuit_tpl=encoding_circuit_tpl,
+                prep_circuit_tpl=prep_circuit_tpl,
+                stabilizer_circuit_tpls=stabilizer_circuit_tpls,
+                rotate_circuit_tpl=rotate_circuit_tpl,
+                logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
             )
             results.append(int(success))
         return results
@@ -656,6 +731,11 @@ def steane_code_exp_sequential(
                 syndrome_mode,
                 noise,  # type: ignore[arg-type]
                 False,
+                encoding_circuit_tpl,
+                prep_circuit_tpl,
+                stabilizer_circuit_tpls,
+                rotate_circuit_tpl,
+                logical_measurement_circuit_tpl,
             )
             for _ in range(shots)
         ]
@@ -674,8 +754,19 @@ def steane_code_exp_sequential_with_trace(
     """运行实验并返回每个 shot 的中间探测轨迹。"""
     if noise is None:
         noise = NoiseModel(enabled=False)
+    if getattr(noise, "enabled", False):
+        noise = _ApplyCacheNoiseModel(noise)
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
+
+    # Build immutable circuit templates once and reuse across all shots.
+    encoding_circuit_tpl = encoding_circuit()
+    prep_circuit_tpl = prepare_stab_eigenstate(initial_state)
+    stabilizer_circuit_tpls = tuple(
+        measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE
+    )
+    rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
+    logical_measurement_circuit_tpl = measure_logical_qubits()
 
     # Keep trace mode single-threaded for determinism and easier debugging.
     # Parallel trace collection is possible but tends to complicate ordering and
@@ -691,6 +782,11 @@ def steane_code_exp_sequential_with_trace(
             syndrome_mode=syndrome_mode,
             noise=noise,
             save_trace=True,
+            encoding_circuit_tpl=encoding_circuit_tpl,
+            prep_circuit_tpl=prep_circuit_tpl,
+            stabilizer_circuit_tpls=stabilizer_circuit_tpls,
+            rotate_circuit_tpl=rotate_circuit_tpl,
+            logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
         )
         results.append(int(success))
         trace = trace if trace is not None else {}

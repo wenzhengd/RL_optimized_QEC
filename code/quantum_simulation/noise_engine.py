@@ -628,6 +628,10 @@ class GoogleLikeGateSpecificNoiseModel(GateDepolarizingNoiseModel):
             raise ValueError("n_1q_slots and n_2q_slots must be positive.")
 
         self.control = np.asarray(control, dtype=float).reshape(-1)
+        self._control_1q: np.ndarray
+        self._control_2q: np.ndarray
+        self._slot_cache_1q: Dict[Tuple[str, Tuple[int, ...]], int] = {}
+        self._slot_cache_2q: Dict[Tuple[str, Tuple[int, ...]], int] = {}
         self.optimal_control_fn = optimal_control_fn
         self.p_1q_base = float(p_1q_base)
         self.p_2q_base = float(p_2q_base)
@@ -638,6 +642,7 @@ class GoogleLikeGateSpecificNoiseModel(GateDepolarizingNoiseModel):
         expected = self.n_1q_slots + self.n_2q_slots
         if self.control.shape[0] != expected:
             raise ValueError(f"Expected control dim {expected}, got {self.control.shape[0]}")
+        self._control_1q, self._control_2q = self._split(self.control)
 
         super().__init__(
             p_1q=self._p_1q,
@@ -655,6 +660,7 @@ class GoogleLikeGateSpecificNoiseModel(GateDepolarizingNoiseModel):
         if vec.shape[0] != expected:
             raise ValueError(f"Expected control dim {expected}, got {vec.shape[0]}")
         self.control = vec
+        self._control_1q, self._control_2q = self._split(self.control)
 
     def _split(self, vec: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         return vec[: self.n_1q_slots], vec[self.n_1q_slots :]
@@ -674,6 +680,22 @@ class GoogleLikeGateSpecificNoiseModel(GateDepolarizingNoiseModel):
             acc = ((acc ^ (int(q) + 31)) * 16777619) & 0xFFFFFFFF
         return int(acc % n_slots)
 
+    def _stable_slot_cached(
+        self,
+        instruction: stim.CircuitInstruction,
+        n_slots: int,
+        cache: Dict[Tuple[str, Tuple[int, ...]], int],
+    ) -> int:
+        if n_slots == 1:
+            return 0
+        qubits = tuple(_extract_qubit_targets(instruction))
+        key = (instruction.name, qubits)
+        slot = cache.get(key)
+        if slot is None:
+            slot = self._stable_slot(instruction, n_slots)
+            cache[key] = int(slot)
+        return int(slot)
+
     def _optimal_split(self, t_ns: float) -> Tuple[np.ndarray, np.ndarray]:
         opt = np.asarray(self.optimal_control_fn(float(t_ns)), dtype=float).reshape(-1)
         expected = self.n_1q_slots + self.n_2q_slots
@@ -685,27 +707,24 @@ class GoogleLikeGateSpecificNoiseModel(GateDepolarizingNoiseModel):
         return self._split(opt)
 
     def _p_1q(self, _op_index: int, t_ns: float, instruction: stim.CircuitInstruction) -> float:
-        c1, _ = self._split(self.control)
         o1, _ = self._optimal_split(t_ns)
-        slot = self._stable_slot(instruction, self.n_1q_slots)
-        mse = float((c1[slot] - o1[slot]) ** 2)
+        slot = self._stable_slot_cached(instruction, self.n_1q_slots, self._slot_cache_1q)
+        mse = float((self._control_1q[slot] - o1[slot]) ** 2)
         p = self.p_1q_base + self.sensitivity_1q * mse
         return self._clip_probability(p)
 
     def _p_2q(self, _op_index: int, t_ns: float, instruction: stim.CircuitInstruction) -> float:
-        _, c2 = self._split(self.control)
         _, o2 = self._optimal_split(t_ns)
-        slot = self._stable_slot(instruction, self.n_2q_slots)
-        mse = float((c2[slot] - o2[slot]) ** 2)
+        slot = self._stable_slot_cached(instruction, self.n_2q_slots, self._slot_cache_2q)
+        mse = float((self._control_2q[slot] - o2[slot]) ** 2)
         p = self.p_2q_base + self.sensitivity_2q * mse
         return self._clip_probability(p)
 
     def effective_error_rates(self, t_ns: float = 0.0) -> Tuple[float, float]:
         """Return mean (p_1q, p_2q) implied by slot-wise mismatch."""
-        c1, c2 = self._split(self.control)
         o1, o2 = self._optimal_split(t_ns)
-        mse_1q = float(np.mean(np.square(c1 - o1)))
-        mse_2q = float(np.mean(np.square(c2 - o2)))
+        mse_1q = float(np.mean(np.square(self._control_1q - o1)))
+        mse_2q = float(np.mean(np.square(self._control_2q - o2)))
         p_1q = self._clip_probability(self.p_1q_base + self.sensitivity_1q * mse_1q)
         p_2q = self._clip_probability(self.p_2q_base + self.sensitivity_2q * mse_2q)
         if self.validate:

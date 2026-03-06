@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 import random
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -300,7 +300,12 @@ def _ppo_update(model: ActorCritic, optimizer: optim.Optimizer, rollout: Rollout
     }
 
 
-def train_ppo(env, cfg: PPOConfig) -> Tuple[ActorCritic, Dict[str, list]]:
+def train_ppo(
+    env,
+    cfg: PPOConfig,
+    model: Optional[ActorCritic] = None,
+    optimizer: Optional[optim.Optimizer] = None,
+) -> Tuple[ActorCritic, Dict[str, list]]:
     """
     High-level PPO training loop.
 
@@ -315,9 +320,14 @@ def train_ppo(env, cfg: PPOConfig) -> Tuple[ActorCritic, Dict[str, list]]:
     _set_seed(cfg.seed)
     device = torch.device(cfg.device)
 
-    # Initialize model and optimizer once.
-    model = ActorCritic(cfg.obs_dim, cfg.theta_dim, cfg.hidden_dim).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate, eps=1e-5)
+    # Initialize model/optimizer unless a pre-trained model is provided
+    # (used by optional phase-2 trace finetuning).
+    if model is None:
+        model = ActorCritic(cfg.obs_dim, cfg.theta_dim, cfg.hidden_dim).to(device)
+    else:
+        model = model.to(device)
+    if optimizer is None:
+        optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate, eps=1e-5)
 
     # Start from a fresh environment reset.
     obs = env.reset()

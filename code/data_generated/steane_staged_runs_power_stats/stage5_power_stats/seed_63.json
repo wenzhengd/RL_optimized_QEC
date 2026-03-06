@@ -1,0 +1,110 @@
+{
+  "args": {
+    "action_limit": 2.0,
+    "device": "cpu",
+    "eval_steane_shots_per_step": 64,
+    "google_paper_ppo_preset": false,
+    "max_steps": 1,
+    "post_eval_episodes": 32,
+    "ppo_ent_coef": 0.01,
+    "ppo_learning_rate": 0.0003,
+    "ppo_minibatch_size": 128,
+    "ppo_update_epochs": 4,
+    "rollout_steps": 32,
+    "save_json": "code/data_generated/steane_staged_runs_power_stats/stage5_power_stats/seed_63.json",
+    "seed": 63,
+    "steane_action_penalty_coef": 0.001,
+    "steane_collect_traces": false,
+    "steane_control_dim": 8,
+    "steane_control_mode": "gate_specific",
+    "steane_drift_amplitude": 1.0,
+    "steane_drift_period_steps": 150.0,
+    "steane_expose_oracle_metrics": false,
+    "steane_miscal_penalty_coef": 0.0,
+    "steane_n_1q_control_slots": 24,
+    "steane_n_2q_control_slots": 24,
+    "steane_n_rounds": 4,
+    "steane_p1q_base": 0.00067,
+    "steane_p2q_base": 0.0027,
+    "steane_p_clip_max": 0.3,
+    "steane_reset_drift_on_episode": false,
+    "steane_reward_mode": "paper_surrogate",
+    "steane_sensitivity_1q": 0.002,
+    "steane_sensitivity_2q": 0.005,
+    "steane_shot_workers": 1,
+    "steane_shots_per_step": 4,
+    "steane_stepping_mode": "candidate_eval",
+    "steane_success_bonus_coef": 0.0,
+    "steane_syndrome_mode": "DE",
+    "total_timesteps": 512
+  },
+  "eval_metrics": {
+    "fixed_zero": {
+      "detector_rate": 0.0625,
+      "ler_proxy": 0.0625,
+      "success_rate": 0.9375
+    },
+    "learned": {
+      "detector_rate": 0.05517578125,
+      "ler_proxy": 0.05517578125,
+      "success_rate": 0.94482421875
+    },
+    "random_uniform": {
+      "detector_rate": 0.1904296875,
+      "ler_proxy": 0.1904296875,
+      "success_rate": 0.8095703125
+    }
+  },
+  "final_mean_rollout_reward": -0.20080338418483734,
+  "improvement_vs_fixed_zero": {
+    "detector_rate": 0.1171875,
+    "ler_proxy": 0.1171875
+  },
+  "improvement_vs_random_uniform": {
+    "detector_rate": 0.7102564102564103,
+    "ler_proxy": 0.7102564102564103
+  },
+  "ppo_cfg": {
+    "clip_eps": 0.2,
+    "device": "cpu",
+    "ent_coef": 0.01,
+    "gae_lambda": 0.95,
+    "gamma": 0.99,
+    "hidden_dim": 128,
+    "learning_rate": 0.0003,
+    "max_grad_norm": 0.5,
+    "max_steps": 1,
+    "minibatch_size": 128,
+    "obs_dim": 11,
+    "rollout_steps": 32,
+    "seed": 63,
+    "theta_dim": 48,
+    "total_timesteps": 512,
+    "update_epochs": 4,
+    "vf_coef": 0.5
+  },
+  "steane_cfg": {
+    "collect_traces": false,
+    "control_dim": 8,
+    "control_mode": "gate_specific",
+    "drift_amplitude": 1.0,
+    "drift_period_steps": 150.0,
+    "expose_oracle_metrics": false,
+    "initial_state": "+Z",
+    "meas_basis": "Z",
+    "n_1q_control_slots": 24,
+    "n_2q_control_slots": 24,
+    "n_rounds": 4,
+    "p_1q_base": 0.00067,
+    "p_2q_base": 0.0027,
+    "p_clip_max": 0.3,
+    "reset_drift_on_episode": false,
+    "seed": 63,
+    "sensitivity_1q": 0.002,
+    "sensitivity_2q": 0.005,
+    "shot_workers": 1,
+    "shots_per_step": 4,
+    "stepping_mode": "candidate_eval",
+    "syndrome_mode": "DE"
+  }
+}
