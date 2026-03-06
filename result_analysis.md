@@ -218,7 +218,7 @@ What to change:
 5. Expand to online round-wise control for adaptive policy behavior.
 
 用中文： (Human write // plz don't delete the following strategy in Chinese. )
-1. **先增强统计功效（不改算法**
+  1. **先增强统计功效（不改算法）**
 
   - 目标：先判断“到底有没有稳定正信号”。
   - 做法：固定当前训练配置，只把 seeds 提到 15-20，并把 post_eval_episodes、eval_shots 提高。
@@ -261,3 +261,187 @@ Not yet supported:
 3. Add a final "trace-enabled evaluation only" pass for top checkpoints to report detector/stabilizer metrics beyond success proxy.
 4. Report confidence intervals for absolute success gain and failure-rate reduction.
 5. Pre-register a clear success criterion (for example: mean failure-rate reduction > X% with CI excluding zero).
+
+## Update (2026-03-06): Stage5 Statistics and Stage6 Trace Finetune
+
+New runs:
+
+- `code/data_generated/steane_staged_runs_power_stats/summary.json` (stage5, 20 seeds)
+- `code/data_generated/steane_staged_runs_trace_finetune/summary.json` (stage6, 12 seeds)
+
+Stage5 (`power_stats`, no trace finetune):
+
+- improve(LER~) mean/std: `+5.20% +- 13.70%`
+- learned success mean/std: `93.42% +- 1.10%`
+- sign count: `13 positive / 6 negative / 1 zero` (n=20)
+- one-sided sign-test p-value: `0.1316`
+
+Stage6 (`trace_finetune`, fast phase-1 + small trace phase-2):
+
+- improve(LER~) mean/std: `+12.21% +- 16.46%`
+- learned success mean/std: `93.40% +- 1.11%`
+- sign count: `10 positive / 2 negative / 0 zero` (n=12)
+- one-sided sign-test p-value: `0.0193`
+
+Interim interpretation:
+
+- adding a small trace-based finetune phase improved average relative LER reduction
+  in this first comparison (`+12.21%` vs `+5.20%`),
+- but stage6 has fewer seeds than stage5, so this should be treated as a promising
+  signal, not a final claim.
+
+## Update (2026-03-06): Stage7 Progressive Scale (skip stage6 n=20 extension)
+
+New run:
+
+- `code/data_generated/steane_staged_runs_progressive_scale/summary.json` (stage7, 10 seeds)
+
+Stage7 config intent:
+
+- keep PPO + trace-finetune workflow from stage6,
+- moderately increase train/data budget (more rounds, shots, timesteps),
+- keep seed-level process parallelism (`--seed-workers 5`) for practical wall-clock.
+
+Stage7 (`progressive_scale`) aggregate:
+
+- improve(LER~) mean/std: `+33.97% +- 9.24%`
+- learned success mean/std: `91.72% +- 1.06%`
+- sign count: `10 positive / 0 negative` (n=10)
+- one-sided sign-test p-value: `0.00098`
+
+Stage7 per-seed LER~ improvement (%):
+
+- seed120 `+48.30`, seed121 `+30.63`, seed122 `+51.68`, seed123 `+21.25`, seed124 `+29.12`
+- seed125 `+35.56`, seed126 `+24.15`, seed127 `+35.35`, seed128 `+35.63`, seed129 `+28.02`
+
+Budget comparison (planning units, same accounting as above):
+
+- stage6 per-seed units: `35,840`
+- stage7 per-seed units: `89,088` (`2.49x` vs stage6)
+- stage6 total units: `430,080` (12 seeds)
+- stage7 total units: `890,880` (10 seeds, `2.07x` vs stage6 total)
+
+Interim interpretation:
+
+- this progressive scale step produced a clear and consistent positive signal
+  across all seeds in this run,
+- compared with stage6, effect size increased (`+33.97%` vs `+12.21%`) and variance
+  shrank (`9.24%` vs `16.46%` std),
+- this is strong internal evidence that increased data budget and trace-finetune
+  are helping in our Steane pipeline.
+
+## Update (2026-03-06): Stage8-10 Scale Curve (progressive high-budget sweep)
+
+New run:
+
+- `code/data_generated/steane_staged_runs_scale_curve/summary.json`
+  (stage8/9/10 in one continuous run)
+
+### Aggregate results
+
+| Stage | Seeds | improve(LER~) mean +- std | 95% CI (mean) | learned success mean +- std | sign count | one-sided sign-test p |
+|---|---:|---:|---:|---:|---:|---:|
+| stage8_scale_x3 | 10 | `+49.37% +- 12.66%` | `[+41.52%, +57.22%]` | `93.87% +- 0.55%` | `10+/0-/0` | `0.00098` |
+| stage9_scale_x10 | 8 | `+48.96% +- 6.41%` | `[+44.52%, +53.40%]` | `93.88% +- 0.44%` | `8+/0-/0` | `0.00391` |
+| stage10_scale_x30 | 6 | `+49.30% +- 11.79%` | `[+39.87%, +58.73%]` | `94.05% +- 0.20%` | `6+/0-/0` | `0.01563` |
+
+### Compute-cost scaling (planning units)
+
+Using the same unit definition as above:
+
+| Stage | total units | vs stage6 total | vs previous stage |
+|---|---:|---:|---:|
+| stage6_trace_finetune | `430,080` | `1.00x` | - |
+| stage7_progressive_scale | `890,880` | `2.07x` | `2.07x` |
+| stage8_scale_x3 | `2,227,200` | `5.18x` | `2.50x` |
+| stage9_scale_x10 | `5,606,400` | `13.04x` | `2.52x` |
+| stage10_scale_x30 | `13,307,904` | `30.94x` | `2.37x` |
+
+### Interpretation for Step-3 objective
+
+- Physical improvement is now consistently positive in all seeds for stage7-10.
+- The effect grows strongly from stage6 to stage8 (`+12.21% -> +49.37%`), then
+  enters a plateau around `~49%` for stage8/9/10.
+- This means Step-3 ("scale data budget and build improvement-vs-cost curve") is
+  effectively achieved up to about `31x` total compute vs stage6.
+- Marginal gain after stage8 is small under the current PPO + environment setup,
+  which suggests near-saturation for this configuration (not necessarily global optimum).
+
+Practical conclusion:
+
+- We now have strong internal evidence that increasing data budget (with the
+  current trace-finetune workflow) materially improves Steane performance.
+- For next gains, algorithm/model/protocol changes are likely to matter more than
+  simply pushing the same pipeline to much higher compute.
+
+## Update (2026-03-06): Stage11 Architecture Fairness (Wider LayerNorm MLP)
+
+New run:
+
+- `code/data_generated/steane_staged_runs_arch_mlp/summary.json` (stage11, 10 seeds)
+
+Protocol:
+
+- stage11 keeps stage8 budget/protocol fixed (same timesteps/shots/rounds/eval),
+- only architecture changes:
+  - `ppo_hidden_dim: 256` (from 128),
+  - `ppo_use_layer_norm: true` (stage8 was false).
+
+### Stage8 vs Stage11 (equal-budget comparison)
+
+| Stage | Seeds | improve(LER~) mean +- std | 95% CI (mean) | learned success mean +- std | sign count | one-sided sign-test p |
+|---|---:|---:|---:|---:|---:|---:|
+| stage8_scale_x3 (baseline) | 10 | `+49.37% +- 12.66%` | `[+41.52%, +57.22%]` | `93.87% +- 0.55%` | `10+/0-/0` | `0.00098` |
+| stage11_arch_mlp (wider+LN) | 10 | `+33.86% +- 13.99%` | `[+25.19%, +42.53%]` | `92.16% +- 1.40%` | `10+/0-/0` | `0.00098` |
+
+Delta (stage11 - stage8):
+
+- improve(LER~): `-15.51` percentage points
+- learned success: `-1.71` percentage points
+
+Interim interpretation:
+
+- under this equal-budget setup, wider LayerNorm MLP is still beneficial vs fixed-zero
+  baseline (all seeds positive), but underperforms the stage8 baseline architecture.
+- likely implication: architecture-only widening/LN is not sufficient here without
+  re-tuning PPO hyperparameters (learning rate, entropy coefficient, rollout/update mix).
+
+## Update (2026-03-06): Step-4 Option 1 (PPO hyperparameter retune for wider+LN MLP)
+
+New runs:
+
+- `code/data_generated/steane_staged_runs_arch_tune/summary.json` (stage12/13/14, tuning sweep)
+- `code/data_generated/steane_staged_runs_arch_tuned_confirm/summary.json` (stage15, 10-seed confirmation)
+
+### Tuning sweep (same budget as stage8/stage11, 5 seeds each)
+
+| Stage | Key tuning change | improve(LER~) mean +- std | learned success mean +- std |
+|---|---|---:|---:|
+| stage12_arch_mlp_tune_a | lower LR (`1e-4`) + trace LR (`5e-5`), entropy `0.01` | `+50.42% +- 9.45%` | `93.30% +- 1.24%` |
+| stage13_arch_mlp_tune_b | lower LR + lower entropy (`0.005`) | `+42.74% +- 6.21%` | `93.41% +- 0.31%` |
+| stage14_arch_mlp_tune_c | moderate LR + more PPO updates (`epochs=6`) | `+39.04% +- 7.64%` | `93.49% +- 1.13%` |
+
+Selection:
+
+- `stage12 (tune_a)` selected as best candidate for confirmation.
+
+### Confirmation run (stage15, 10 seeds)
+
+| Stage | Seeds | improve(LER~) mean +- std | 95% CI (mean) | learned success mean +- std | sign count | one-sided sign-test p |
+|---|---:|---:|---:|---:|---:|---:|
+| stage11_arch_mlp (untuned) | 10 | `+33.86% +- 13.99%` | `[+25.19%, +42.53%]` | `92.16% +- 1.40%` | `10+/0-/0` | `0.00098` |
+| stage15_arch_mlp_tuned_confirm | 10 | `+46.55% +- 8.33%` | `[+41.38%, +51.71%]` | `93.49% +- 0.72%` | `10+/0-/0` | `0.00098` |
+| stage8_scale_x3 baseline | 10 | `+49.37% +- 12.66%` | `[+41.52%, +57.22%]` | `93.87% +- 0.55%` | `10+/0-/0` | `0.00098` |
+
+Delta summary:
+
+- stage15 - stage11: `+12.69` percentage points (LER~ improvement)
+- stage15 - stage8: `-2.82` percentage points (LER~ improvement)
+
+Interpretation:
+
+- Hyperparameter retuning substantially recovered architecture performance
+  (`stage11 -> stage15`), validating that the initial stage11 drop was largely
+  optimization mismatch, not a hard architecture failure.
+- After tuning, wider+LayerNorm MLP is close to stage8 baseline but still not
+  clearly better in this 10-seed confirmation.

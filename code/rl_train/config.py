@@ -24,6 +24,7 @@ class PPOConfig:
         vf_coef: Value loss coefficient.
         max_grad_norm: Gradient clipping threshold.
         hidden_dim: Width of hidden layers in actor and critic MLPs.
+        use_layer_norm: Whether to insert LayerNorm after hidden linear layers.
         seed: Random seed for NumPy/PyTorch/Python RNG.
         device: Torch device string, for example "cpu" or "cuda".
     """
@@ -50,5 +51,6 @@ class PPOConfig:
 
     # Network / reproducibility
     hidden_dim: int = 128
+    use_layer_norm: bool = False
     seed: int = 42
     device: str = "cpu"

@@ -22,7 +22,7 @@ class ActorCritic(nn.Module):
     - Critic estimates V(s_t) for advantage/value targets.
     """
 
-    def __init__(self, obs_dim: int, theta_dim: int, hidden_dim: int) -> None:
+    def __init__(self, obs_dim: int, theta_dim: int, hidden_dim: int, use_layer_norm: bool = False) -> None:
         """
         Build actor and critic MLPs.
 
@@ -30,22 +30,27 @@ class ActorCritic(nn.Module):
             obs_dim: Observation dimension.
             theta_dim: Action/theta dimension.
             hidden_dim: Width of hidden layers.
+            use_layer_norm: If True, apply LayerNorm after hidden linear layers.
         """
         super().__init__()
+        def _hidden_block(in_dim: int, out_dim: int) -> nn.Sequential:
+            layers = [nn.Linear(in_dim, out_dim)]
+            if use_layer_norm:
+                # LayerNorm can stabilize optimization when widening the MLP.
+                layers.append(nn.LayerNorm(out_dim))
+            layers.append(nn.Tanh())
+            return nn.Sequential(*layers)
+
         # Actor: observation -> action mean.
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
+            _hidden_block(obs_dim, hidden_dim),
+            _hidden_block(hidden_dim, hidden_dim),
             nn.Linear(hidden_dim, theta_dim),
         )
         # Critic: observation -> scalar state value.
         self.critic = nn.Sequential(
-            nn.Linear(obs_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
+            _hidden_block(obs_dim, hidden_dim),
+            _hidden_block(hidden_dim, hidden_dim),
             nn.Linear(hidden_dim, 1),
         )
         # Global log_std shared across states; expanded per batch in get_dist().
@@ -323,7 +328,12 @@ def train_ppo(
     # Initialize model/optimizer unless a pre-trained model is provided
     # (used by optional phase-2 trace finetuning).
     if model is None:
-        model = ActorCritic(cfg.obs_dim, cfg.theta_dim, cfg.hidden_dim).to(device)
+        model = ActorCritic(
+            cfg.obs_dim,
+            cfg.theta_dim,
+            cfg.hidden_dim,
+            use_layer_norm=cfg.use_layer_norm,
+        ).to(device)
     else:
         model = model.to(device)
     if optimizer is None:

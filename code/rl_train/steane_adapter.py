@@ -19,10 +19,7 @@ from typing import Dict, Literal, Sequence
 
 import numpy as np
 
-from quantum_simulation.noise_engine import (
-    GoogleLikeDepolarizingNoiseModel,
-    GoogleLikeGateSpecificNoiseModel,
-)
+from quantum_simulation.noise_channels import build_steane_rl_noise_model
 from quantum_simulation.steane_code_simulator import STABILIZER_SEQUENCE, SteaneQECSimulator
 
 from .interfaces import SimulatorTransition
@@ -53,6 +50,26 @@ class SteaneAdapterConfig:
     sensitivity_1q: float = 2.0e-3
     sensitivity_2q: float = 5.0e-3
     p_clip_max: float = 0.3
+    # Noise-channel selection.
+    #   auto: preserve legacy behavior by mapping control_mode->google_* channel.
+    #   google_global / google_gate_specific: paper-style gate depolarizing models.
+    #   idle_depolarizing: action-independent idle Pauli channel.
+    #   parametric_google: google-style channel with external regime knobs.
+    noise_channel: Literal[
+        "auto",
+        "google_global",
+        "google_gate_specific",
+        "idle_depolarizing",
+        "parametric_google",
+    ] = "auto"
+    # Idle depolarizing parameters (used when noise_channel=idle_depolarizing).
+    idle_p_total_per_idle: float = 0.0
+    idle_px_weight: float = 1.0
+    idle_py_weight: float = 1.0
+    idle_pz_weight: float = 1.0
+    # Regime parameters for channel-level sweeps (for future experiments).
+    channel_regime_a: float = 1.0
+    channel_regime_b: float = 1.0
     # Parallel Monte-Carlo shots inside one simulator call.
     # 1 means no parallelism.
     shot_workers: int = 1
@@ -196,33 +213,26 @@ class SteaneOnlineSteeringSimulator:
 
         optimal = self._optimal_control(self._t)
         optimal_fn = lambda _t_ns: optimal
-        if self.cfg.control_mode == "global":
-            noise = GoogleLikeDepolarizingNoiseModel(
-                control=action,
-                optimal_control_fn=optimal_fn,
-                p_1q_base=self.cfg.p_1q_base,
-                p_2q_base=self.cfg.p_2q_base,
-                sensitivity_1q=self.cfg.sensitivity_1q,
-                sensitivity_2q=self.cfg.sensitivity_2q,
-                p_clip_max=self.cfg.p_clip_max,
-                enabled=True,
-            )
-        elif self.cfg.control_mode == "gate_specific":
-            noise = GoogleLikeGateSpecificNoiseModel(
-                control=action,
-                optimal_control_fn=optimal_fn,
-                p_1q_base=self.cfg.p_1q_base,
-                p_2q_base=self.cfg.p_2q_base,
-                sensitivity_1q=self.cfg.sensitivity_1q,
-                sensitivity_2q=self.cfg.sensitivity_2q,
-                n_1q_slots=self.cfg.n_1q_control_slots,
-                n_2q_slots=self.cfg.n_2q_control_slots,
-                p_clip_max=self.cfg.p_clip_max,
-                enabled=True,
-            )
-        else:
-            raise ValueError(f"Unknown control_mode: {self.cfg.control_mode}")
-        p_1q, p_2q = noise.effective_error_rates(0.0)
+        noise, p_1q, p_2q, resolved_channel = build_steane_rl_noise_model(
+            noise_channel=self.cfg.noise_channel,
+            control_mode=self.cfg.control_mode,
+            action=action.astype(float),
+            optimal_control_fn=optimal_fn,
+            p_1q_base=self.cfg.p_1q_base,
+            p_2q_base=self.cfg.p_2q_base,
+            sensitivity_1q=self.cfg.sensitivity_1q,
+            sensitivity_2q=self.cfg.sensitivity_2q,
+            n_1q_slots=self.cfg.n_1q_control_slots,
+            n_2q_slots=self.cfg.n_2q_control_slots,
+            p_clip_max=self.cfg.p_clip_max,
+            idle_p_total_per_idle=self.cfg.idle_p_total_per_idle,
+            idle_px_weight=self.cfg.idle_px_weight,
+            idle_py_weight=self.cfg.idle_py_weight,
+            idle_pz_weight=self.cfg.idle_pz_weight,
+            channel_regime_a=self.cfg.channel_regime_a,
+            channel_regime_b=self.cfg.channel_regime_b,
+            enabled=True,
+        )
 
         if self._sim is None:
             self._sim = SteaneQECSimulator(noise=noise)
@@ -297,6 +307,9 @@ class SteaneOnlineSteeringSimulator:
             "collect_traces": bool(self.cfg.collect_traces),
             "metrics_source": metrics_source,
             "action_norm_l2": float(np.linalg.norm(action)),
+            "noise_channel": resolved_channel,
+            "channel_regime_a": float(self.cfg.channel_regime_a),
+            "channel_regime_b": float(self.cfg.channel_regime_b),
             "control_mode": self.cfg.control_mode,
             "n_1q_control_slots": int(self.cfg.n_1q_control_slots),
             "n_2q_control_slots": int(self.cfg.n_2q_control_slots),

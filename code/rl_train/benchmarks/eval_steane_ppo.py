@@ -11,12 +11,13 @@ import argparse
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Sequence, cast
 
 import numpy as np
 import torch
 
 from ..config import PPOConfig
+from ..codes.factory import available_code_families, build_code_components
 from ..env import ExternalSimulatorEnv
 from ..ppo import train_ppo
 from ..steane_adapter import SteaneAdapterConfig, SteaneOnlineSteeringSimulator, clipped_identity_action_mapper
@@ -32,6 +33,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark PPO performance on Steane RL environment.")
 
     # Preset and runtime controls.
+    parser.add_argument("--code-family", choices=list(available_code_families()), default="steane")
     parser.add_argument("--google-paper-ppo-preset", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cpu")
@@ -64,6 +66,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ppo-update-epochs", type=int, default=4)
     parser.add_argument("--ppo-minibatch-size", type=int, default=128)
     parser.add_argument("--ppo-ent-coef", type=float, default=0.01)
+    parser.add_argument(
+        "--ppo-hidden-dim",
+        type=int,
+        default=128,
+        help="Hidden width for actor/critic MLPs.",
+    )
+    parser.add_argument(
+        "--ppo-use-layer-norm",
+        action="store_true",
+        help="Enable LayerNorm in hidden MLP blocks for actor/critic.",
+    )
     parser.add_argument("--action-limit", type=float, default=2.0)
     parser.add_argument(
         "--trace-finetune-timesteps",
@@ -118,6 +131,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--steane-sensitivity-1q", type=float, default=2.0e-3)
     parser.add_argument("--steane-sensitivity-2q", type=float, default=5.0e-3)
     parser.add_argument("--steane-p-clip-max", type=float, default=0.3)
+    parser.add_argument(
+        "--steane-noise-channel",
+        choices=["auto", "google_global", "google_gate_specific", "idle_depolarizing", "parametric_google"],
+        default="auto",
+    )
+    parser.add_argument("--steane-idle-p-total-per-idle", type=float, default=0.0)
+    parser.add_argument("--steane-idle-px-weight", type=float, default=1.0)
+    parser.add_argument("--steane-idle-py-weight", type=float, default=1.0)
+    parser.add_argument("--steane-idle-pz-weight", type=float, default=1.0)
+    parser.add_argument("--steane-channel-regime-a", type=float, default=1.0)
+    parser.add_argument("--steane-channel-regime-b", type=float, default=1.0)
     parser.add_argument("--steane-shot-workers", type=int, default=1)
     parser.add_argument("--steane-collect-traces", action="store_true")
     parser.add_argument("--steane-reset-drift-on-episode", action="store_true")
@@ -142,35 +166,12 @@ def _build_steane_components(
         miscal_penalty_coef=args.steane_miscal_penalty_coef,
         success_bonus_coef=args.steane_success_bonus_coef,
     )
-    steane_cfg = SteaneAdapterConfig(
-        n_rounds=args.steane_n_rounds,
-        shots_per_step=args.steane_shots_per_step,
-        control_mode=args.steane_control_mode,
-        control_dim=args.steane_control_dim,
-        n_1q_control_slots=args.steane_n_1q_control_slots,
-        n_2q_control_slots=args.steane_n_2q_control_slots,
-        syndrome_mode=args.steane_syndrome_mode,
-        stepping_mode=args.steane_stepping_mode,
-        drift_period_steps=args.steane_drift_period_steps,
-        drift_amplitude=args.steane_drift_amplitude,
-        p_1q_base=args.steane_p1q_base,
-        p_2q_base=args.steane_p2q_base,
-        sensitivity_1q=args.steane_sensitivity_1q,
-        sensitivity_2q=args.steane_sensitivity_2q,
-        p_clip_max=args.steane_p_clip_max,
-        shot_workers=args.steane_shot_workers,
-        collect_traces=args.steane_collect_traces,
-        reset_drift_on_episode=args.steane_reset_drift_on_episode,
-        expose_oracle_metrics=args.steane_expose_oracle_metrics,
-        seed=args.seed,
-    )
-    simulator = SteaneOnlineSteeringSimulator(steane_cfg)
-    env = ExternalSimulatorEnv(
-        simulator=simulator,
-        max_steps=args.max_steps,
-        reward_fn=reward_fn,
-        action_mapper=lambda x: clipped_identity_action_mapper(x, action_limit=args.action_limit),
-    )
+    components = build_code_components(args, reward_fn=reward_fn)
+    if components.code_family != "steane":
+        raise ValueError("eval_steane_ppo currently supports only code-family 'steane'.")
+    steane_cfg = cast(SteaneAdapterConfig, components.code_cfg)
+    simulator = cast(SteaneOnlineSteeringSimulator, components.simulator)
+    env = cast(ExternalSimulatorEnv, components.env)
     return steane_cfg, simulator, env
 
 
@@ -186,6 +187,8 @@ def _build_ppo_config(args: argparse.Namespace, simulator: SteaneOnlineSteeringS
         minibatch_size=args.ppo_minibatch_size,
         learning_rate=args.ppo_learning_rate,
         ent_coef=args.ppo_ent_coef,
+        hidden_dim=args.ppo_hidden_dim,
+        use_layer_norm=bool(args.ppo_use_layer_norm),
         device=args.device,
         seed=args.seed,
     )

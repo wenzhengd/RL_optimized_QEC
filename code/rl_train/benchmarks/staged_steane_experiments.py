@@ -1,4 +1,4 @@
-"""Three-stage Steane PPO experiment driver.
+"""Multi-stage Steane PPO experiment driver.
 
 Stages follow a practical progression:
   1) sanity: tiny compute budget, verify pipeline runs end-to-end
@@ -39,7 +39,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--stages",
         type=str,
         default="1,2,3",
-        help="Comma-separated stage IDs to run from {1,2,3,4,5,6}.",
+        help="Comma-separated stage IDs to run from {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}.",
     )
     parser.add_argument(
         "--output-dir",
@@ -195,6 +195,290 @@ def _default_stage_specs(seed_offset: int, device: str) -> Dict[str, StageSpec]:
                 "steane_collect_traces": False,
             },
         ),
+        "7": StageSpec(
+            name="stage7_progressive_scale",
+            description=(
+                "Progressive scale-up: keep trace-finetune workflow and increase "
+                "training/data budget moderately for stronger policy learning."
+            ),
+            seed_list=[120 + seed_offset + i for i in range(10)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Phase-1 training: moderate scale-up vs stage6.
+                "total_timesteps": 1024,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 6,
+                # Phase-2 trace finetune: still small, but stronger than stage6.
+                "trace_finetune_timesteps": 192,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 12,
+                "trace_finetune_n_rounds": 6,
+                # Keep high-statistics eval.
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "8": StageSpec(
+            name="stage8_scale_x3",
+            description=(
+                "Scale curve point A: ~3x per-seed compute vs stage7 while "
+                "preserving PPO and trace-finetune workflow."
+            ),
+            seed_list=[140 + seed_offset + i for i in range(10)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Phase-1: larger timesteps/shots, same rollout granularity.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                # Phase-2 trace finetune: scaled up but still cheaper than phase-1.
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                # Keep high-stat eval for comparable confidence.
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "9": StageSpec(
+            name="stage9_scale_x10",
+            description=(
+                "Scale curve point B: around an order-of-magnitude per-seed "
+                "compute vs stage7 with stronger train/eval sampling."
+            ),
+            seed_list=[160 + seed_offset + i for i in range(8)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Phase-1: major data scale increase.
+                "total_timesteps": 8192,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 10,
+                # Phase-2 trace finetune: increase both horizon and shot count.
+                "trace_finetune_timesteps": 1024,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 20,
+                "trace_finetune_n_rounds": 6,
+                # Increase eval sampling to tighten uncertainty at this scale.
+                "post_eval_episodes": 48,
+                "eval_steane_shots_per_step": 96,
+                "trace_eval_episodes": 12,
+                "trace_eval_steane_shots_per_step": 48,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "10": StageSpec(
+            name="stage10_scale_x30",
+            description=(
+                "Scale curve point C: high-compute run targeting ~30x training "
+                "data regime vs stage7 while keeping algorithm unchanged."
+            ),
+            seed_list=[180 + seed_offset + i for i in range(6)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Phase-1: dominant compute increase for scaling-law signal.
+                "total_timesteps": 24576,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 12,
+                # Phase-2 trace finetune: proportional increase, still secondary.
+                "trace_finetune_timesteps": 2048,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 24,
+                "trace_finetune_n_rounds": 6,
+                # Keep stronger evaluation statistics.
+                "post_eval_episodes": 64,
+                "eval_steane_shots_per_step": 128,
+                "trace_eval_episodes": 16,
+                "trace_eval_steane_shots_per_step": 64,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "11": StageSpec(
+            name="stage11_arch_mlp",
+            description=(
+                "Architecture fairness run: keep stage8 data budget/protocol and "
+                "switch to a wider LayerNorm MLP policy/value network."
+            ),
+            seed_list=[220 + seed_offset + i for i in range(10)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Keep stage8 training budget for apples-to-apples comparison.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                # Architecture-only change.
+                "ppo_hidden_dim": 256,
+                "ppo_use_layer_norm": True,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "12": StageSpec(
+            name="stage12_arch_mlp_tune_a",
+            description=(
+                "Hyperparameter tune A (same stage8 budget): wider LayerNorm MLP "
+                "with lower PPO learning rates for stability."
+            ),
+            seed_list=[240 + seed_offset + i for i in range(5)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Same budget/protocol as stage8 and stage11.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                # Architecture fixed; tune optimizer only.
+                "ppo_hidden_dim": 256,
+                "ppo_use_layer_norm": True,
+                "ppo_learning_rate": 1e-4,
+                "ppo_ent_coef": 0.01,
+                "trace_finetune_learning_rate": 5e-5,
+                "trace_finetune_ent_coef": 0.01,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "13": StageSpec(
+            name="stage13_arch_mlp_tune_b",
+            description=(
+                "Hyperparameter tune B (same stage8 budget): lower learning rate "
+                "with reduced entropy pressure in phase-1/phase-2."
+            ),
+            seed_list=[250 + seed_offset + i for i in range(5)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Same budget/protocol as stage8 and stage11.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                # Architecture fixed; tune optimizer only.
+                "ppo_hidden_dim": 256,
+                "ppo_use_layer_norm": True,
+                "ppo_learning_rate": 1e-4,
+                "ppo_ent_coef": 0.005,
+                "trace_finetune_learning_rate": 5e-5,
+                "trace_finetune_ent_coef": 0.005,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "14": StageSpec(
+            name="stage14_arch_mlp_tune_c",
+            description=(
+                "Hyperparameter tune C (same stage8 budget): moderate learning rate "
+                "plus more PPO update passes for the wider LayerNorm MLP."
+            ),
+            seed_list=[260 + seed_offset + i for i in range(5)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Same budget/protocol as stage8 and stage11.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                # Architecture fixed; tune optimizer only.
+                "ppo_hidden_dim": 256,
+                "ppo_use_layer_norm": True,
+                "ppo_learning_rate": 1.5e-4,
+                "ppo_ent_coef": 0.005,
+                "ppo_update_epochs": 6,
+                "ppo_minibatch_size": 64,
+                "trace_finetune_learning_rate": 7.5e-5,
+                "trace_finetune_ent_coef": 0.005,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
+        "15": StageSpec(
+            name="stage15_arch_mlp_tuned_confirm",
+            description=(
+                "Confirmation run after tuning: keep stage8 budget and use selected "
+                "wider LayerNorm MLP hyperparameters with 10 seeds."
+            ),
+            seed_list=[270 + seed_offset + i for i in range(10)],
+            overrides={
+                "google_paper_ppo_preset": False,
+                "device": device,
+                # Same budget/protocol as stage8 and stage11.
+                "total_timesteps": 3072,
+                "rollout_steps": 32,
+                "steane_n_rounds": 6,
+                "steane_shots_per_step": 8,
+                "trace_finetune_timesteps": 384,
+                "trace_finetune_rollout_steps": 16,
+                "trace_finetune_shots_per_step": 16,
+                "trace_finetune_n_rounds": 6,
+                "post_eval_episodes": 32,
+                "eval_steane_shots_per_step": 64,
+                "trace_eval_episodes": 8,
+                "trace_eval_steane_shots_per_step": 32,
+                # Selected initial tuned setting (updated after stage12-14 comparison if needed).
+                "ppo_hidden_dim": 256,
+                "ppo_use_layer_norm": True,
+                "ppo_learning_rate": 1e-4,
+                "ppo_ent_coef": 0.01,
+                "trace_finetune_learning_rate": 5e-5,
+                "trace_finetune_ent_coef": 0.01,
+                "steane_shot_workers": 1,
+                "steane_collect_traces": False,
+            },
+        ),
     }
 
 
@@ -279,7 +563,7 @@ def main() -> None:
     stage_specs = _default_stage_specs(seed_offset=args.seed_offset, device=args.device)
     unknown = [s for s in stage_order if s not in stage_specs]
     if unknown:
-        raise ValueError(f"Unknown stage ids: {unknown}. Allowed: 1,2,3,4,5,6.")
+        raise ValueError(f"Unknown stage ids: {unknown}. Allowed: 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15.")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

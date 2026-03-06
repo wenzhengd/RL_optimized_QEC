@@ -77,6 +77,21 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --eval-steane-shots-per-step 64
 ```
 
+Run the same benchmark with a wider LayerNorm MLP policy/value network:
+
+```bash
+python -m rl_train.benchmarks.eval_steane_ppo \
+  --total-timesteps 512 \
+  --rollout-steps 32 \
+  --ppo-hidden-dim 256 \
+  --ppo-use-layer-norm \
+  --trace-finetune-timesteps 64 \
+  --trace-finetune-rollout-steps 16 \
+  --trace-finetune-shots-per-step 8 \
+  --post-eval-episodes 32 \
+  --eval-steane-shots-per-step 64
+```
+
 Run the staged protocol (sanity -> pilot -> scale, optional power stage):
 
 ```bash
@@ -101,6 +116,50 @@ python -m rl_train.benchmarks.staged_steane_experiments \
   --stages 6 \
   --seed-workers 5 \
   --output-dir code/data_generated/steane_staged_runs_trace_finetune
+```
+
+Run architecture fairness stage (same budget as stage8, wider LayerNorm MLP):
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 11 \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_arch_mlp
+```
+
+Run wider+LayerNorm MLP hyperparameter tuning sweep (A/B/C, 5 seeds each):
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 12,13,14 \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_arch_tune
+```
+
+Run tuned wider+LayerNorm MLP confirmation stage (10 seeds):
+
+```bash
+python -m rl_train.benchmarks.staged_steane_experiments \
+  --stages 15 \
+  --seed-workers 5 \
+  --output-dir code/data_generated/steane_staged_runs_arch_tuned_confirm
+```
+
+Sweep RL performance over channel-regime parameters `(a,b)`:
+
+```bash
+python -m rl_train.benchmarks.sweep_steane_channel_regime \
+  --regime-a-values 0.8,1.0,1.2 \
+  --regime-b-values 0.8,1.0,1.2 \
+  --force-channel parametric_google \
+  --output-json code/data_generated/steane_channel_regime_sweep.json \
+  --total-timesteps 512 \
+  --rollout-steps 32 \
+  --trace-finetune-timesteps 64 \
+  --trace-finetune-rollout-steps 16 \
+  --trace-finetune-shots-per-step 8 \
+  --post-eval-episodes 16 \
+  --eval-steane-shots-per-step 32
 ```
 
 Run legacy global-control baseline (all gates share one global control vector):
@@ -150,6 +209,15 @@ In `train.py`, replace:
 - Control modes:
   - `gate_specific` (default): gate instruction maps to dedicated control slot.
   - `global`: shared control mismatch drives one global `p_1q/p_2q`.
+- Noise-channel layer (new):
+  - `--steane-noise-channel auto` (default): legacy mapping from control mode.
+  - `--steane-noise-channel google_gate_specific` / `google_global`: Google-like gate depolarizing channels.
+  - `--steane-noise-channel idle_depolarizing`: action-independent idle Pauli channel.
+  - `--steane-noise-channel parametric_google`: Google-like channel with regime knobs
+    `--steane-channel-regime-a` and `--steane-channel-regime-b`.
+  - idle channel parameters:
+    `--steane-idle-p-total-per-idle`, `--steane-idle-px-weight`, `--steane-idle-py-weight`,
+    `--steane-idle-pz-weight`.
 - Two stepping modes:
   - `candidate_eval`: each RL step runs a full `n_rounds` memory experiment.
   - `online_rounds`: each RL step runs exactly 1 round; simulator returns `done=True` after `n_rounds` steps.

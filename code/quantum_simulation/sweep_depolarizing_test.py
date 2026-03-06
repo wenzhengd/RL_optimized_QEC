@@ -25,23 +25,39 @@ from typing import Any
 
 import numpy as np
 
-from noise_engine import GateDurations, TimeDependentPauliNoiseModel
-from steane_code_simulator import (
-    STABILIZER_SEQUENCE,
-    SteaneQECSimulator,
-    encoding_circuit,
-    measure_logical_qubits,
-    measure_single_stabilizer,
-    prepare_stab_eigenstate,
-    rotate_to_measurement_basis,
-)
+try:
+    from noise_engine import GateDurations, NoiseModel
+    from noise_channels import build_idle_depolarizing_noise_model
+    from steane_code_simulator import (
+        STABILIZER_SEQUENCE,
+        SteaneQECSimulator,
+        encoding_circuit,
+        measure_logical_qubits,
+        measure_single_stabilizer,
+        prepare_stab_eigenstate,
+        rotate_to_measurement_basis,
+    )
+except ModuleNotFoundError:
+    # Package import path, e.g. `python -m quantum_simulation.sweep_depolarizing_test`.
+    from quantum_simulation.noise_engine import GateDurations, NoiseModel
+    from quantum_simulation.noise_channels import build_idle_depolarizing_noise_model
+    from quantum_simulation.steane_code_simulator import (
+        STABILIZER_SEQUENCE,
+        SteaneQECSimulator,
+        encoding_circuit,
+        measure_logical_qubits,
+        measure_single_stabilizer,
+        prepare_stab_eigenstate,
+        rotate_to_measurement_basis,
+    )
 
 
-class CachedTimeDependentPauliNoiseModel(TimeDependentPauliNoiseModel):
-    """TimeDependentPauliNoiseModel with circuit-level apply cache."""
+class CachedNoiseModel(NoiseModel):
+    """Thin wrapper that memoizes `noise.apply(circuit)` by circuit text."""
 
-    def __init__(self, *args: Any, **kwargs: Any):
-        super().__init__(*args, **kwargs)
+    def __init__(self, base: NoiseModel):
+        self.base = base
+        self.enabled = bool(getattr(base, "enabled", True))
         self._cache: dict[str, Any] = {}
 
     def apply(self, circuit: Any) -> Any:
@@ -51,7 +67,7 @@ class CachedTimeDependentPauliNoiseModel(TimeDependentPauliNoiseModel):
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        out = super().apply(circuit)
+        out = self.base.apply(circuit)
         self._cache[key] = out
         return out
 
@@ -151,12 +167,12 @@ def run_sweep(
 
     for i, p_total in enumerate(error_rates):
         p_idle = p_total / float(idle_windows_per_successful_shot)
-        rate_each_axis = (p_idle / 3.0) / idle_ns
-        noise = CachedTimeDependentPauliNoiseModel(
-            p_x=rate_each_axis,
-            p_y=rate_each_axis,
-            p_z=rate_each_axis,
-            enabled=True,
+        noise = CachedNoiseModel(
+            build_idle_depolarizing_noise_model(
+                p_total_per_idle=p_idle,
+                axis_weights=(1.0, 1.0, 1.0),
+                enabled=True,
+            )
         )
         sim = SteaneQECSimulator(noise=noise)
         out = sim.run_experiment_with_trace(
@@ -207,12 +223,13 @@ def _run_single_error_rate_point(args: tuple[Any, ...]) -> tuple[int, float, dic
     os.environ.setdefault("OMP_NUM_THREADS", "1")
 
     p_idle = float(p_total) / float(idle_windows_per_successful_shot)
-    rate_each_axis = (p_idle / 3.0) / float(idle_ns)
-    noise = CachedTimeDependentPauliNoiseModel(
-        p_x=rate_each_axis,
-        p_y=rate_each_axis,
-        p_z=rate_each_axis,
-        enabled=True,
+    noise = CachedNoiseModel(
+        build_idle_depolarizing_noise_model(
+            p_total_per_idle=p_idle,
+            idle_ns=float(idle_ns),
+            axis_weights=(1.0, 1.0, 1.0),
+            enabled=True,
+        )
     )
     sim = SteaneQECSimulator(noise=noise)
     out = sim.run_experiment_with_trace(
