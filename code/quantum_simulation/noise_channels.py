@@ -16,6 +16,7 @@ try:
         GateDurations,
         GoogleLikeDepolarizingNoiseModel,
         GoogleLikeGateSpecificNoiseModel,
+        HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
         TimeDependentPauliNoiseModel,
     )
@@ -25,6 +26,7 @@ except ImportError:
         GateDurations,
         GoogleLikeDepolarizingNoiseModel,
         GoogleLikeGateSpecificNoiseModel,
+        HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
         TimeDependentPauliNoiseModel,
     )
@@ -104,53 +106,6 @@ def build_idle_depolarizing_noise_model(
     )
 
 
-def correlated_pauli_model_kernel(
-    *,
-    t_ns: float,
-    qubit_index: int,
-    idle_ns: float,
-    action_vec: np.ndarray,
-    optimal_vec: np.ndarray,
-    p_1q_base: float,
-    sensitivity_1q: float,
-    p_clip_max: float,
-    regime_a: float,
-    regime_b: float,
-) -> float:
-    """User-editable physics model hook for correlated Pauli channel.
-
-    This is the single place you should replace with your own physical model.
-    Contract:
-      - Return total Pauli probability `p_total(q,t)` for one idle window.
-      - Must satisfy `0 <= p_total <= p_clip_max`.
-      - `regime_a`, `regime_b` are free control parameters for regime sweeps.
-    """
-    q = int(qubit_index)
-    idle = float(idle_ns)
-    if idle <= 0.0:
-        return 0.0
-
-    delta_sq = np.square(action_vec - optimal_vec)
-    mismatch_global = float(np.mean(delta_sq))
-    p_total_nominal = float(np.clip((float(p_1q_base) + float(sensitivity_1q) * mismatch_global) * float(regime_a), 0.0, float(p_clip_max)))
-
-    # Default prototype correlation model (replace freely).
-    corr = float(np.clip(np.tanh(float(regime_b)), 0.0, 0.99))
-    idx = q % action_vec.size
-    local_mismatch = float(delta_sq[idx])
-    local_scale = 1.0 + 0.5 * (local_mismatch - mismatch_global) / (mismatch_global + 1e-12)
-    local_scale = float(np.clip(local_scale, 0.25, 2.0))
-    p_local = p_total_nominal * local_scale
-
-    amp = 0.35
-    control_phase = float(np.sum(action_vec))
-    x = float(t_ns) / idle
-    global_wave = float(np.sin(2.0 * np.pi * x / 48.0 + 0.1 * control_phase))
-    local_wave = float(np.sin(2.0 * np.pi * x / 9.0 + 0.37 * q + 0.03 * control_phase))
-    modulation = corr * global_wave + (1.0 - corr) * local_wave
-    return float(np.clip(p_local * (1.0 + amp * modulation), 0.0, float(p_clip_max)))
-
-
 def build_correlated_pauli_noise_channel(
     *,
     action: np.ndarray,
@@ -158,21 +113,22 @@ def build_correlated_pauli_noise_channel(
     p_1q_base: float,
     sensitivity_1q: float,
     p_clip_max: float,
-    regime_a: float,
-    regime_b: float,
+    corr_strength_g: float,
+    corr_frequency_hz: float,
     axis_weights: Sequence[float] = (1.0, 1.0, 1.0),
-    idle_ns: float | None = None,
     enabled: bool = True,
-) -> tuple[TimeDependentPauliNoiseModel, float]:
-    """Build a custom correlated Pauli idle-noise channel.
+) -> tuple[HiddenMarkovCorrelatedPauliNoiseModel, float]:
+    """Build a direction-independent Hidden-Markov Pauli idle-noise channel.
 
-    Design intent:
-      - Beyond standard idle depolarizing and beyond Google gate-depolarizing mapping.
-      - Uses `correlated_pauli_model_kernel(...)` as the only physics hook.
+    This construction is:
+      - qubit independent: each qubit has independent hidden chains
+      - direction independent: X/Y/Z have independent hidden chains with
+        identical (f, g) parameters
+      - temporally correlated: each chain uses a two-state Markov telegraph
 
     Returns:
-      `(noise_model, p_total_proxy)`, where `p_total_proxy` is the nominal
-      per-idle total Pauli probability scale used for logging.
+      `(noise_model, p_total_effective)` where `p_total_effective` is the
+      stationary mean total non-identity Pauli probability per idle window.
     """
     action_vec = np.asarray(action, dtype=float).reshape(-1)
     if action_vec.size == 0:
@@ -185,10 +141,6 @@ def build_correlated_pauli_noise_channel(
             f"action={action_vec.shape}, optimal={opt.shape}"
         )
 
-    idle = float(idle_ns) if idle_ns is not None else float(GateDurations().idle_ns)
-    if idle <= 0.0:
-        raise ValueError("idle_ns must be positive.")
-
     w = np.asarray(axis_weights, dtype=float).reshape(-1)
     if w.shape[0] != 3:
         raise ValueError("axis_weights must contain exactly 3 values.")
@@ -199,38 +151,69 @@ def build_correlated_pauli_noise_channel(
         raise ValueError("axis_weights sum must be positive.")
     w = w / w_sum
 
-    reg_a = max(0.0, float(regime_a))
-    reg_b = max(0.0, float(regime_b))
-    clip_max = float(p_clip_max)
-
-    delta_sq = np.square(action_vec - opt)
-    mismatch_global = float(np.mean(delta_sq))
-    p_total_nominal = float(np.clip((float(p_1q_base) + float(sensitivity_1q) * mismatch_global) * reg_a, 0.0, clip_max))
-
-    def _p_total_tq(t_ns: float, qubit_index: int) -> float:
-        return correlated_pauli_model_kernel(
-            t_ns=float(t_ns),
-            qubit_index=int(qubit_index),
-            idle_ns=idle,
-            action_vec=action_vec,
-            optimal_vec=opt,
-            p_1q_base=float(p_1q_base),
-            sensitivity_1q=float(sensitivity_1q),
-            p_clip_max=float(p_clip_max),
-            regime_a=reg_a,
-            regime_b=reg_b,
+    # This channel enforces direction-independence.
+    if not np.allclose(w, np.full(3, 1.0 / 3.0), atol=1e-12):
+        raise ValueError(
+            "correlated_pauli_noise_channel enforces direction-independent noise; "
+            "set idle_px_weight=idle_py_weight=idle_pz_weight."
         )
 
-    def _p_axis(t_ns: float, qubit_index: int, weight: float) -> float:
-        return (_p_total_tq(t_ns, qubit_index) * float(weight)) / idle
+    g = max(0.0, float(corr_strength_g))
+    f_hz = max(0.0, float(corr_frequency_hz))
+    clip_max = float(p_clip_max)
 
-    noise = TimeDependentPauliNoiseModel(
-        p_x=lambda t, q: _p_axis(t, q, float(w[0])),
-        p_y=lambda t, q: _p_axis(t, q, float(w[1])),
-        p_z=lambda t, q: _p_axis(t, q, float(w[2])),
-        enabled=enabled,
+    # Mean total non-identity probability per idle.
+    delta_sq = np.square(action_vec - opt)
+    mismatch_global = float(np.mean(delta_sq))
+    p_total_nominal = float(
+        np.clip(
+            (float(p_1q_base) + float(sensitivity_1q) * mismatch_global) * g,
+            0.0,
+            clip_max,
+        )
     )
-    return noise, p_total_nominal
+
+    # For independent X/Y/Z Bernoulli flips with per-axis mean p_axis:
+    #   p_total = 1 - P(I) = 1 - ((1-p)^3 + p^3) = 3p(1-p)
+    # so p_axis = (1 - sqrt(1 - 4*p_total/3)) / 2.
+    p_total_effective = float(np.clip(p_total_nominal, 0.0, 0.75 - 1e-12))
+    disc = float(max(0.0, 1.0 - (4.0 / 3.0) * p_total_effective))
+    p_axis_mean = 0.5 * (1.0 - float(np.sqrt(disc)))
+
+    # Two-state on/off telegraph with stationary mean p_axis_mean.
+    p_low = 0.0
+    p_high = float(np.clip(2.0 * p_axis_mean, 0.0, 1.0))
+
+    idle_s = float(GateDurations().idle_ns) * 1e-9
+    if idle_s <= 0.0:
+        raise ValueError("idle_ns must be positive.")
+    rho = float(np.exp(-f_hz * idle_s))
+    gamma = float(np.clip((1.0 - rho) / 2.0, 0.0, 0.499999))
+
+    transition = np.array([[1.0 - gamma, gamma], [gamma, 1.0 - gamma]], dtype=float)
+    # Seed from global numpy RNG to preserve reproducibility when global seeding is used.
+    seed = int(np.random.randint(0, 2**32 - 1))
+    noise = HiddenMarkovCorrelatedPauliNoiseModel(
+        p_by_state=[p_low, p_high],
+        transition_matrix=transition,
+        initial_distribution=[0.5, 0.5],
+        durations=GateDurations(),
+        enabled=enabled,
+        random_seed=seed,
+    )
+    noise.model_metadata = {
+        "corr_f_hz": float(f_hz),
+        "corr_g": float(g),
+        "gamma": float(gamma),
+        "p_total_nominal": float(p_total_nominal),
+        "p_total_effective": float(p_total_effective),
+        "p_axis_mean": float(p_axis_mean),
+        "p_axis_low": float(p_low),
+        "p_axis_high": float(p_high),
+        "direction_independent": 1,
+        "qubit_independent": 1,
+    }
+    return noise, p_total_effective
 
 
 def build_steane_rl_noise_model(
@@ -250,6 +233,8 @@ def build_steane_rl_noise_model(
     idle_px_weight: float,
     idle_py_weight: float,
     idle_pz_weight: float,
+    channel_corr_f: float,
+    channel_corr_g: float,
     channel_regime_a: float,
     channel_regime_b: float,
     enabled: bool = True,
@@ -331,8 +316,8 @@ def build_steane_rl_noise_model(
             p_1q_base=float(p_1q_base),
             sensitivity_1q=float(sensitivity_1q),
             p_clip_max=float(p_clip_max),
-            regime_a=reg_a,
-            regime_b=reg_b,
+            corr_strength_g=float(channel_corr_g),
+            corr_frequency_hz=float(channel_corr_f),
             axis_weights=(float(idle_px_weight), float(idle_py_weight), float(idle_pz_weight)),
             enabled=enabled,
         )

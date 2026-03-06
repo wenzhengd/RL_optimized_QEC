@@ -69,7 +69,13 @@ class SteaneAdapterConfig:
     idle_px_weight: float = 1.0
     idle_py_weight: float = 1.0
     idle_pz_weight: float = 1.0
-    # Regime parameters for channel-level sweeps (for future experiments).
+    # Correlated-channel parameters.
+    # f: correlation frequency (Hz), sets temporal correlation length.
+    # g: overall channel-strength multiplier.
+    channel_corr_f: float = 1.0e4
+    channel_corr_g: float = 1.0
+    # Legacy regime parameters kept for backward compatibility with existing
+    # non-correlated-channel sweeps (e.g. parametric_google).
     channel_regime_a: float = 1.0
     channel_regime_b: float = 1.0
     # Parallel Monte-Carlo shots inside one simulator call.
@@ -231,6 +237,8 @@ class SteaneOnlineSteeringSimulator:
             idle_px_weight=self.cfg.idle_px_weight,
             idle_py_weight=self.cfg.idle_py_weight,
             idle_pz_weight=self.cfg.idle_pz_weight,
+            channel_corr_f=self.cfg.channel_corr_f,
+            channel_corr_g=self.cfg.channel_corr_g,
             channel_regime_a=self.cfg.channel_regime_a,
             channel_regime_b=self.cfg.channel_regime_b,
             enabled=True,
@@ -241,6 +249,11 @@ class SteaneOnlineSteeringSimulator:
         else:
             self._sim.noise = noise
         sim = self._sim
+        effective_shot_workers = int(self.cfg.shot_workers)
+        # Hidden-Markov correlated channel is stateful per shot and should run
+        # in single-worker mode to preserve correct temporal memory semantics.
+        if resolved_channel == "correlated_pauli_noise_channel":
+            effective_shot_workers = 1
         n_rounds_eval = self._rounds_this_step()
         n_steps = int(n_rounds_eval) * 6
         if self.cfg.collect_traces:
@@ -251,7 +264,7 @@ class SteaneOnlineSteeringSimulator:
                 n_steps=n_steps,
                 shots=int(self.cfg.shots_per_step),
                 syndrome_mode=self.cfg.syndrome_mode,
-                shot_workers=int(self.cfg.shot_workers),
+                shot_workers=effective_shot_workers,
             )
             traces = out["traces"]
             success_rate = float(out["success_rate"])
@@ -269,7 +282,7 @@ class SteaneOnlineSteeringSimulator:
                 n_steps=n_steps,
                 shots=int(self.cfg.shots_per_step),
                 syndrome_mode=self.cfg.syndrome_mode,
-                shot_workers=int(self.cfg.shot_workers),
+                shot_workers=effective_shot_workers,
             )
             success_rate = float(out["success_rate"])
             # Not observable without traces; keep explicit sentinel value.
@@ -306,10 +319,13 @@ class SteaneOnlineSteeringSimulator:
             "n_rounds_eval": int(n_rounds_eval),
             "shots": int(self.cfg.shots_per_step),
             "shot_workers": int(self.cfg.shot_workers),
+            "effective_shot_workers": int(effective_shot_workers),
             "collect_traces": bool(self.cfg.collect_traces),
             "metrics_source": metrics_source,
             "action_norm_l2": float(np.linalg.norm(action)),
             "noise_channel": resolved_channel,
+            "channel_corr_f": float(self.cfg.channel_corr_f),
+            "channel_corr_g": float(self.cfg.channel_corr_g),
             "channel_regime_a": float(self.cfg.channel_regime_a),
             "channel_regime_b": float(self.cfg.channel_regime_b),
             "control_mode": self.cfg.control_mode,
@@ -319,6 +335,11 @@ class SteaneOnlineSteeringSimulator:
             "episode_step": int(self._episode_step),
             "progress": progress,
         }
+        model_meta = getattr(noise, "model_metadata", None)
+        if isinstance(model_meta, dict):
+            for k, v in model_meta.items():
+                if isinstance(v, (int, float)):
+                    info[f"channel_meta_{k}"] = v
         # Oracle-only diagnostics are optionally exposed for offline debugging.
         if self.cfg.expose_oracle_metrics:
             info["miscalibration_mse"] = miscalibration_mse

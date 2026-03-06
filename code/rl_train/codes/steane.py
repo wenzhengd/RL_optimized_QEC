@@ -37,6 +37,8 @@ def build_steane_components(args: argparse.Namespace, reward_fn: RewardFn) -> Co
         idle_px_weight=args.steane_idle_px_weight,
         idle_py_weight=args.steane_idle_py_weight,
         idle_pz_weight=args.steane_idle_pz_weight,
+        channel_corr_f=args.steane_channel_corr_f,
+        channel_corr_g=args.steane_channel_corr_g,
         channel_regime_a=args.steane_channel_regime_a,
         channel_regime_b=args.steane_channel_regime_b,
         shot_workers=args.steane_shot_workers,

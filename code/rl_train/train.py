@@ -414,6 +414,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steane-idle-px-weight", type=float, default=1.0)
     parser.add_argument("--steane-idle-py-weight", type=float, default=1.0)
     parser.add_argument("--steane-idle-pz-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--steane-channel-corr-f",
+        type=float,
+        default=1.0e4,
+        help=(
+            "Correlation frequency f (Hz) for correlated_pauli_noise_channel. "
+            "Lower f means longer temporal correlation time."
+        ),
+    )
+    parser.add_argument(
+        "--steane-channel-corr-g",
+        type=float,
+        default=1.0,
+        help=(
+            "Overall channel-strength scale g for correlated_pauli_noise_channel. "
+            "Scales the nominal total Pauli error probability."
+        ),
+    )
+    # Deprecated aliases kept for backward compatibility with existing scripts.
     parser.add_argument("--steane-channel-regime-a", type=float, default=1.0)
     parser.add_argument("--steane-channel-regime-b", type=float, default=1.0)
     parser.add_argument("--steane-shot-workers", type=int, default=1)

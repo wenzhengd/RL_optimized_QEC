@@ -88,6 +88,8 @@ class _ApplyCacheNoiseModel(NoiseModel):
     def __init__(self, base: NoiseModel):
         self.base = base
         self.enabled = bool(getattr(base, "enabled", True))
+        self.disable_apply_cache = bool(getattr(base, "disable_apply_cache", False))
+        self.stateful = bool(getattr(base, "stateful", False))
         self._cache: dict[str, stim.Circuit] = {}
 
     def apply(self, circuit: stim.Circuit) -> stim.Circuit:
@@ -494,6 +496,9 @@ def _run_single_shot_sequential(
     logical_measurement_circuit_tpl: Optional[stim.Circuit] = None,
 ) -> tuple[int, Optional[dict[str, Any]]]:
     """运行一个 shot，并可选保存中间轨迹。"""
+    if hasattr(noise, "start_shot") and callable(getattr(noise, "start_shot")):
+        noise.start_shot()
+
     if encoding_circuit_tpl is None:
         encoding_circuit_tpl = encoding_circuit()
     if prep_circuit_tpl is None:
@@ -682,7 +687,7 @@ def steane_code_exp_sequential(
     """
     if noise is None:
         noise = NoiseModel(enabled=False)
-    if getattr(noise, "enabled", False):
+    if getattr(noise, "enabled", False) and not bool(getattr(noise, "disable_apply_cache", False)):
         noise = _ApplyCacheNoiseModel(noise)
 
     if n_steps < 1:
@@ -754,7 +759,7 @@ def steane_code_exp_sequential_with_trace(
     """运行实验并返回每个 shot 的中间探测轨迹。"""
     if noise is None:
         noise = NoiseModel(enabled=False)
-    if getattr(noise, "enabled", False):
+    if getattr(noise, "enabled", False) and not bool(getattr(noise, "disable_apply_cache", False)):
         noise = _ApplyCacheNoiseModel(noise)
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")

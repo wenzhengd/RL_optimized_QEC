@@ -429,6 +429,157 @@ class TimeDependentPauliNoiseModel(NoiseModel):
         return noisy
 
 
+class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
+    """Hidden-Markov correlated Pauli channel injected during idle windows.
+
+    This implementation enforces:
+      - qubit independence: each qubit has its own hidden chain
+      - direction independence: X/Y/Z each have independent hidden chains
+
+    All chains share the same `p_by_state` and transition matrix.
+    This model is stateful across successive `apply(...)` calls within one shot.
+    Call `start_shot()` before each new Monte-Carlo shot.
+    """
+
+    def __init__(
+        self,
+        p_by_state: Sequence[float],
+        transition_matrix: Sequence[Sequence[float]],
+        *,
+        initial_distribution: Optional[Sequence[float]] = None,
+        durations: Optional[GateDurations] = None,
+        enabled: bool = True,
+        tolerance: float = 1e-12,
+        random_seed: Optional[int] = None,
+    ):
+        self.enabled = bool(enabled)
+        self.disable_apply_cache = True
+        self.stateful = True
+        self.tolerance = float(tolerance)
+        self.durations = durations if durations is not None else GateDurations()
+        self.timeline_builder = TimelineBuilder(self.durations)
+
+        probs = np.asarray(p_by_state, dtype=float).reshape(-1)
+        if probs.size < 2:
+            raise ValueError("p_by_state must contain at least 2 states.")
+        if np.any(probs < -self.tolerance):
+            raise ValueError("p_by_state must be non-negative.")
+        if np.any(probs > 1.0 + self.tolerance):
+            raise ValueError("p_by_state entries must be <= 1.")
+        probs = np.clip(probs, 0.0, 1.0)
+        self._p_by_state = probs
+        self._num_states = int(probs.size)
+
+        t = np.asarray(transition_matrix, dtype=float)
+        if t.shape != (self._num_states, self._num_states):
+            raise ValueError(
+                "transition_matrix shape mismatch: "
+                f"expected {(self._num_states, self._num_states)}, got {t.shape}"
+            )
+        if np.any(t < -self.tolerance):
+            raise ValueError("transition_matrix must be non-negative.")
+        row_sums = np.sum(t, axis=1)
+        if np.any(np.abs(row_sums - 1.0) > 1e-9):
+            raise ValueError("Each row of transition_matrix must sum to 1.")
+        self._transition = np.clip(t, 0.0, 1.0)
+
+        if initial_distribution is None:
+            pi = np.full(self._num_states, 1.0 / float(self._num_states), dtype=float)
+        else:
+            pi = np.asarray(initial_distribution, dtype=float).reshape(-1)
+            if pi.shape != (self._num_states,):
+                raise ValueError(
+                    "initial_distribution length mismatch: "
+                    f"expected {self._num_states}, got {pi.shape[0]}"
+                )
+            if np.any(pi < -self.tolerance):
+                raise ValueError("initial_distribution must be non-negative.")
+            s = float(np.sum(pi))
+            if s <= 0.0:
+                raise ValueError("initial_distribution sum must be positive.")
+            pi = pi / s
+        self._initial = np.clip(pi, 0.0, 1.0)
+        self._initial = self._initial / float(np.sum(self._initial))
+
+        self._rng = np.random.default_rng(random_seed)
+        # shape: (3, num_qubits), axis order [X, Y, Z]
+        self._axis_states: Optional[np.ndarray] = None
+        self._num_qubits_state: int = -1
+        self.model_metadata: dict[str, float | int] = {}
+
+    def start_shot(self) -> None:
+        """Reset hidden states at the beginning of a new shot."""
+        self._axis_states = None
+        self._num_qubits_state = -1
+
+    def _ensure_state_initialized(self, num_qubits: int) -> None:
+        if self._axis_states is not None and self._num_qubits_state == int(num_qubits):
+            return
+        if int(num_qubits) < 0:
+            raise ValueError(f"num_qubits must be non-negative, got {num_qubits}")
+        if int(num_qubits) == 0:
+            self._axis_states = np.zeros((3, 0), dtype=np.int64)
+            self._num_qubits_state = 0
+            return
+        states = self._rng.choice(
+            self._num_states,
+            size=(3, int(num_qubits)),
+            p=self._initial,
+        )
+        self._axis_states = np.asarray(states, dtype=np.int64)
+        self._num_qubits_state = int(num_qubits)
+
+    def _sample_axis_event_and_advance(self, axis_index: int, qubit_index: int) -> bool:
+        assert self._axis_states is not None
+        s = int(self._axis_states[axis_index, qubit_index])
+        p = float(self._p_by_state[s])
+        event = bool(float(self._rng.random()) < p)
+        row = self._transition[s]
+        self._axis_states[axis_index, qubit_index] = int(self._rng.choice(self._num_states, p=row))
+        return event
+
+    def _append_idle_window_noise(self, noisy_circuit: stim.Circuit, num_qubits: int) -> None:
+        self._ensure_state_initialized(num_qubits=num_qubits)
+        assert self._axis_states is not None
+
+        x_targets: List[int] = []
+        y_targets: List[int] = []
+        z_targets: List[int] = []
+        for q in range(num_qubits):
+            if self._sample_axis_event_and_advance(axis_index=0, qubit_index=q):
+                x_targets.append(q)
+            if self._sample_axis_event_and_advance(axis_index=1, qubit_index=q):
+                y_targets.append(q)
+            if self._sample_axis_event_and_advance(axis_index=2, qubit_index=q):
+                z_targets.append(q)
+
+        # Applying multiple axes on one qubit is allowed; Stim handles Pauli products.
+        if x_targets:
+            noisy_circuit.append("X", x_targets)
+        if y_targets:
+            noisy_circuit.append("Y", y_targets)
+        if z_targets:
+            noisy_circuit.append("Z", z_targets)
+
+    def apply(self, circuit: stim.Circuit) -> stim.Circuit:
+        if not self.enabled:
+            return circuit
+
+        events = self.timeline_builder.build_events(circuit)
+        if not events:
+            return circuit
+
+        noisy = stim.Circuit()
+        num_qubits = int(circuit.num_qubits)
+        for i, ev in enumerate(events):
+            inst = ev.instruction
+            noisy.append(inst.name, inst.targets_copy(), inst.gate_args_copy())
+            if i == len(events) - 1:
+                continue
+            self._append_idle_window_noise(noisy, num_qubits=num_qubits)
+        return noisy
+
+
 class GateDepolarizingNoiseModel(NoiseModel):
     """Inject depolarizing channels directly after 1q/2q gates.
 

@@ -185,13 +185,13 @@ python -m rl_train.benchmarks.staged_steane_experiments \
   --output-dir code/data_generated/steane_staged_runs_arch_tuned_confirm
 ```
 
-Sweep RL performance over channel-regime parameters `(a,b)`:
+Sweep RL performance over correlated-channel parameters `(f,g)`:
 
 ```bash
 python -m rl_train.benchmarks.sweep_steane_channel_regime \
-  --regime-a-values 0.8,1.0,1.2 \
-  --regime-b-values 0.8,1.0,1.2 \
-  --force-channel parametric_google \
+  --corr-f-values 1e3,1e4,1e5 \
+  --corr-g-values 0.6,1.0,1.4 \
+  --force-channel correlated_pauli_noise_channel \
   --output-json code/data_generated/steane_channel_regime_sweep.json \
   --total-timesteps 512 \
   --rollout-steps 32 \
@@ -255,11 +255,14 @@ In `train.py`, replace:
   - `--steane-noise-channel idle_depolarizing`: action-independent idle Pauli channel.
   - `--steane-noise-channel parametric_google`: Google-like channel with regime knobs
     `--steane-channel-regime-a` and `--steane-channel-regime-b`.
-  - `--steane-noise-channel correlated_pauli_noise_channel`: custom temporally correlated
-    idle Pauli channel (action-aware and regime-aware).
+  - `--steane-noise-channel correlated_pauli_noise_channel`: temporally correlated
+    idle Pauli channel with explicit `(f,g)` controls and direction/qubit independence.
   - idle channel parameters:
     `--steane-idle-p-total-per-idle`, `--steane-idle-px-weight`, `--steane-idle-py-weight`,
     `--steane-idle-pz-weight`.
+  - correlated channel parameters:
+    `--steane-channel-corr-f` (Hz, lower means slower drift / longer memory),
+    `--steane-channel-corr-g` (overall channel-strength scale).
 
 Quick smoke example for the custom correlated channel:
 
@@ -272,19 +275,24 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --post-eval-episodes 1 \
   --eval-steane-shots-per-step 2 \
   --steane-noise-channel correlated_pauli_noise_channel \
-  --steane-channel-regime-a 1.0 \
-  --steane-channel-regime-b 1.5
+  --steane-channel-corr-f 1e4 \
+  --steane-channel-corr-g 1.0
 ```
 
 Where to plug in your own correlated physics model:
 
-- Edit exactly this function:
-  [code/quantum_simulation/noise_channels.py](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_channels.py)
-  `correlated_pauli_model_kernel(...)`
-- Keep output contract: return one idle-window total Pauli probability
-  `p_total(q,t)` clipped in `[0, p_clip_max]`.
-- Keep axis split/Stim integration unchanged unless you intentionally want
-  to alter X/Y/Z composition and injection mechanics.
+- Edit this builder:
+  [code/quantum_simulation/noise_channels.py](/Users/wenzheng/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_channels.py)
+  `build_correlated_pauli_noise_channel(...)`
+- The builder creates a two-state Hidden-Markov telegraph Pauli channel with:
+  - explicit correlation frequency `f` and strength scale `g`
+  - qubit-independent and direction-independent dynamics
+  - independent X/Y/Z hidden chains sharing the same `(f,g)` parameters.
+- Actual stateful injection logic lives in:
+  [code/quantum_simulation/noise_engine.py](/Users/wenzheng/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_engine.py)
+  `HiddenMarkovCorrelatedPauliNoiseModel`.
+- For correctness, this channel runs with effective `shot_workers=1`
+  (state is reset at each shot and evolves across idle windows inside that shot).
 - Two stepping modes:
   - `candidate_eval`: each RL step runs a full `n_rounds` memory experiment.
   - `online_rounds`: each RL step runs exactly 1 round; simulator returns `done=True` after `n_rounds` steps.
