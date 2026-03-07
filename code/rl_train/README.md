@@ -262,7 +262,10 @@ In `train.py`, replace:
     `--steane-idle-pz-weight`.
   - correlated channel parameters:
     `--steane-channel-corr-f` (Hz, lower means slower drift / longer memory),
-    `--steane-channel-corr-g` (overall channel-strength scale).
+    `--steane-channel-corr-g` (overall channel-strength scale),
+    `--steane-channel-corr-g-mode` (`per_window` or `per_circuit`).
+    Use `per_circuit` when comparing different circuit lengths and you want
+    g to represent a length-normalized circuit-level budget.
 
 Quick smoke example for the custom correlated channel:
 
@@ -276,7 +279,8 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --eval-steane-shots-per-step 2 \
   --steane-noise-channel correlated_pauli_noise_channel \
   --steane-channel-corr-f 1e4 \
-  --steane-channel-corr-g 1.0
+  --steane-channel-corr-g 1.0 \
+  --steane-channel-corr-g-mode per_circuit
 ```
 
 Where to plug in your own correlated physics model:

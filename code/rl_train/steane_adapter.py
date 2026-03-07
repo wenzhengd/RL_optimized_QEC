@@ -20,7 +20,16 @@ from typing import Dict, Literal, Sequence
 import numpy as np
 
 from quantum_simulation.noise_channels import build_steane_rl_noise_model
-from quantum_simulation.steane_code_simulator import STABILIZER_SEQUENCE, SteaneQECSimulator
+from quantum_simulation.noise_engine import GateDurations, TimelineBuilder
+from quantum_simulation.steane_code_simulator import (
+    STABILIZER_SEQUENCE,
+    SteaneQECSimulator,
+    encoding_circuit,
+    measure_logical_qubits,
+    measure_single_stabilizer,
+    prepare_stab_eigenstate,
+    rotate_to_measurement_basis,
+)
 
 from .interfaces import SimulatorTransition
 
@@ -74,6 +83,10 @@ class SteaneAdapterConfig:
     # g: overall channel-strength multiplier.
     channel_corr_f: float = 1.0e4
     channel_corr_g: float = 1.0
+    # g calibration mode:
+    #   per_window: keep current behavior (g applies to each idle window).
+    #   per_circuit: normalize g to one simulator-step circuit budget.
+    channel_corr_g_mode: Literal["per_window", "per_circuit"] = "per_window"
     # Legacy regime parameters kept for backward compatibility with existing
     # non-correlated-channel sweeps (e.g. parametric_google).
     channel_regime_a: float = 1.0
@@ -120,6 +133,20 @@ class SteaneOnlineSteeringSimulator:
         self._episode_step = 0
         # Reused simulator instance; only noise model is swapped per RL step.
         self._sim: SteaneQECSimulator | None = None
+        # Deterministic template-based estimate for correlated-channel
+        # circuit-length normalization in per_circuit mode.
+        self._timeline_builder = TimelineBuilder(GateDurations())
+        self._stabilizer_noise_windows = tuple(
+            self._noise_windows_for_circuit(measure_single_stabilizer(stab, ancilla=8))
+            for stab in STABILIZER_SEQUENCE
+        )
+        self._base_noise_windows = (
+            self._noise_windows_for_circuit(encoding_circuit())
+            + self._noise_windows_for_circuit(prepare_stab_eigenstate(self.cfg.initial_state))
+            + self._noise_windows_for_circuit(rotate_to_measurement_basis(self.cfg.meas_basis))
+            + self._noise_windows_for_circuit(measure_logical_qubits())
+        )
+        self._noise_windows_cache: Dict[int, int] = {}
 
     @property
     def obs_dim(self) -> int:
@@ -192,6 +219,31 @@ class SteaneOnlineSteeringSimulator:
             return 1
         raise ValueError(f"Unknown stepping_mode: {self.cfg.stepping_mode}")
 
+    def _noise_windows_for_circuit(self, circuit) -> int:
+        events = self._timeline_builder.build_events(circuit)
+        return max(0, len(events) - 1)
+
+    def _estimated_noise_windows_per_shot(self, n_steps: int) -> int:
+        """Estimate idle-window count in one shot for current step length.
+
+        This estimate assumes one successful state-prep attempt. Runtime can
+        still vary slightly when prep retries happen.
+        """
+        n_steps_i = int(n_steps)
+        if n_steps_i < 0:
+            raise ValueError(f"n_steps must be non-negative, got {n_steps}")
+        cached = self._noise_windows_cache.get(n_steps_i)
+        if cached is not None:
+            return int(cached)
+
+        stab_count = len(self._stabilizer_noise_windows)
+        stab_windows = 0
+        for i in range(n_steps_i):
+            stab_windows += int(self._stabilizer_noise_windows[i % stab_count])
+        total = max(1, int(self._base_noise_windows + stab_windows))
+        self._noise_windows_cache[n_steps_i] = int(total)
+        return int(total)
+
     def _progress(self) -> float:
         """Episode progress in [0,1] for online-round mode; 0 otherwise."""
         if self.cfg.stepping_mode != "online_rounds":
@@ -219,6 +271,10 @@ class SteaneOnlineSteeringSimulator:
         if action.shape[0] != self.action_dim:
             raise ValueError(f"Expected action dim {self.action_dim}, got {action.shape[0]}")
 
+        n_rounds_eval = self._rounds_this_step()
+        n_steps = int(n_rounds_eval) * 6
+        corr_windows_per_shot_est = self._estimated_noise_windows_per_shot(n_steps=n_steps)
+
         optimal = self._optimal_control(self._t)
         optimal_fn = lambda _t_ns: optimal
         noise, p_1q, p_2q, resolved_channel = build_steane_rl_noise_model(
@@ -239,6 +295,8 @@ class SteaneOnlineSteeringSimulator:
             idle_pz_weight=self.cfg.idle_pz_weight,
             channel_corr_f=self.cfg.channel_corr_f,
             channel_corr_g=self.cfg.channel_corr_g,
+            channel_corr_g_mode=self.cfg.channel_corr_g_mode,
+            channel_corr_windows_per_step=corr_windows_per_shot_est,
             channel_regime_a=self.cfg.channel_regime_a,
             channel_regime_b=self.cfg.channel_regime_b,
             enabled=True,
@@ -254,8 +312,6 @@ class SteaneOnlineSteeringSimulator:
         # in single-worker mode to preserve correct temporal memory semantics.
         if resolved_channel == "correlated_pauli_noise_channel":
             effective_shot_workers = 1
-        n_rounds_eval = self._rounds_this_step()
-        n_steps = int(n_rounds_eval) * 6
         if self.cfg.collect_traces:
             # Full trace path: high-fidelity diagnostics, significantly slower.
             out = sim.run_experiment_with_trace(
@@ -326,6 +382,8 @@ class SteaneOnlineSteeringSimulator:
             "noise_channel": resolved_channel,
             "channel_corr_f": float(self.cfg.channel_corr_f),
             "channel_corr_g": float(self.cfg.channel_corr_g),
+            "channel_corr_g_mode": self.cfg.channel_corr_g_mode,
+            "channel_corr_windows_per_shot_est": int(corr_windows_per_shot_est),
             "channel_regime_a": float(self.cfg.channel_regime_a),
             "channel_regime_b": float(self.cfg.channel_regime_b),
             "control_mode": self.cfg.control_mode,

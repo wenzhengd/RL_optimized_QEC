@@ -1,0 +1,355 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{\bf Various Channel Models in the Current Codebase}
+\author{}
+\date{}
+
+\newtheorem{remark}{Remark}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document gives a methods-level description of all physical noise channels
+currently implemented in
+\texttt{code/quantum\_simulation/noise\_engine.py} and
+\texttt{code/quantum\_simulation/noise\_channels.py}.
+For each channel, we provide: (i) mathematical construction,
+(ii) parameter meaning and selection guidance, and
+(iii) exact simulation semantics used by the code.
+The target usage is direct reuse in paper Methods/Setup sections.
+\end{abstract}
+
+\tableofcontents
+
+\section{Unified Simulation Setup}
+
+We model the ideal circuit as an ordered instruction sequence.
+Let instruction index be $i=1,\dots,L$, and let
+$\rho_i$ be the state before instruction $i$.
+The simulator applies
+\begin{equation}
+\rho_{i+1} = \mathcal{N}_i\!\left(\mathcal{U}_i(\rho_i)\right),
+\qquad
+\mathcal{U}_i(\rho)=U_i\rho U_i^\dagger,
+\label{eq:generic_update}
+\end{equation}
+where $\mathcal{N}_i$ is channel-specific and can depend on control mismatch,
+gate type, and idle-window position.
+
+\paragraph{Timeline convention.}
+The code builds a serial timeline with fixed idle gap $\tau_{\mathrm{idle}}$
+between adjacent instructions.
+Thus each circuit has $(L-1)$ idle windows:
+\begin{equation}
+W_i = [t_i^{\mathrm{end}},\, t_i^{\mathrm{end}}+\tau_{\mathrm{idle}}],
+\qquad i=1,\dots,L-1.
+\end{equation}
+Idle-only channels act on these windows, not on the final post-instruction gap.
+
+\paragraph{Control mismatch notation.}
+Let current control vector be $u\in\mathbb{R}^{d}$ and drifted optimum be
+$u^\star(t)\in\mathbb{R}^{d}$.
+Define global mismatch
+\begin{equation}
+m(t)=\frac{1}{d}\sum_{k=1}^{d}\left(u_k-u_k^\star(t)\right)^2.
+\label{eq:global_mismatch}
+\end{equation}
+
+\paragraph{Probability clipping.}
+Most channels use
+\begin{equation}
+\mathrm{clip}_{p_{\max}}(x)=\min\{p_{\max},\max\{0,x\}\},
+\end{equation}
+with $p_{\max}=\texttt{p\_clip\_max}$.
+
+\section{Channel I: Google-Like Global Gate Depolarizing (\texttt{google\_global})}
+
+\subsection{Channel construction}
+This channel adds depolarizing noise after each non-measure/non-reset gate.
+The same mismatch scalar $m(t)$ drives all gates at time $t$:
+\begin{align}
+p_{1q}(t) &= \mathrm{clip}_{p_{\max}}\!\left(p_{1q}^{0}+s_{1q}\,m(t)\right),\\
+p_{2q}(t) &= \mathrm{clip}_{p_{\max}}\!\left(p_{2q}^{0}+s_{2q}\,m(t)\right).
+\label{eq:global_google_probs}
+\end{align}
+Here $p_{1q}^{0},p_{2q}^{0}$ are base rates and $s_{1q},s_{2q}$ are
+sensitivity coefficients.
+
+For a 1-qubit gate, code appends \texttt{DEPOLARIZE1($p_{1q}$)};
+for a 2-qubit gate, \texttt{DEPOLARIZE2($p_{2q}$)}.
+Stim semantics are uniform Pauli mixtures:
+\begin{align}
+\mathcal{D}_{1}(p)(\rho)&=(1-p)\rho+\frac{p}{3}\sum_{P\in\{X,Y,Z\}}P\rho P,\\
+\mathcal{D}_{2}(p)(\rho)&=(1-p)\rho+\frac{p}{15}\sum_{P\in\mathcal{P}_2\setminus\{II\}}P\rho P.
+\end{align}
+
+\subsection{Parameter selection}
+A practical calibration path is:
+\begin{enumerate}[label=\textbf{G\arabic*}.]
+\item Fix $p_{1q}^{0},p_{2q}^{0}$ from hardware baseline characterization.
+\item Estimate expected mismatch scale
+$\sigma_m\approx \mathbb{E}[m(t)]$ in the intended RL/control regime.
+\item Choose sensitivities from desired dynamic range:
+\begin{equation}
+s_{1q}\approx \frac{\Delta p_{1q}}{\sigma_m},
+\qquad
+s_{2q}\approx \frac{\Delta p_{2q}}{\sigma_m},
+\end{equation}
+where $\Delta p$ is the target increase from baseline at typical mismatch.
+\item Set $p_{\max}$ large enough not to clip normal operation,
+but low enough to avoid unphysical saturation.
+\end{enumerate}
+
+\section{Channel II: Google-Like Gate-Specific Depolarizing (\texttt{google\_gate\_specific})}
+
+\subsection{Channel construction}
+This model preserves the same depolarizing insertion rule as Channel I,
+but uses gate-specific mismatch features.
+Control is partitioned as
+\begin{equation}
+u=(u^{(1q)},u^{(2q)}),
+\quad
+u^{(1q)}\in\mathbb{R}^{N_{1q}},
+\quad
+u^{(2q)}\in\mathbb{R}^{N_{2q}}.
+\end{equation}
+Each instruction is deterministically assigned a slot index
+(using stable hash of gate name + qubit targets):
+\begin{equation}
+j_{1q}=h_{1q}(\text{inst}),
+\qquad
+j_{2q}=h_{2q}(\text{inst}).
+\end{equation}
+Per-instruction probabilities are
+\begin{align}
+p_{1q,i}&=\mathrm{clip}_{p_{\max}}\!\left(
+p_{1q}^{0}+s_{1q}\left(u^{(1q)}_{j_{1q}}-u^{\star(1q)}_{j_{1q}}(t_i)\right)^2
+\right),\\
+p_{2q,i}&=\mathrm{clip}_{p_{\max}}\!\left(
+p_{2q}^{0}+s_{2q}\left(u^{(2q)}_{j_{2q}}-u^{\star(2q)}_{j_{2q}}(t_i)\right)^2
+\right).
+\label{eq:gate_specific_probs}
+\end{align}
+
+\subsection{Parameter selection}
+\begin{enumerate}[label=\textbf{S\arabic*}.]
+\item Choose $N_{1q},N_{2q}$ to control parameter sharing.
+Larger slot counts reduce hash collisions; smaller counts enforce sharing.
+\item Keep $p_{1q}^{0},p_{2q}^{0}$ at calibrated baselines,
+then tune $s_{1q},s_{2q}$ for desired control leverage.
+\item Verify collision statistics for the target circuit family,
+since collision structure changes effective model capacity.
+\end{enumerate}
+
+\begin{remark}
+With one slot ($N_{1q}=N_{2q}=1$), this channel degenerates toward global behavior.
+With many slots, it approximates gate-by-gate control sensitivity.
+\end{remark}
+
+\section{Channel III: Idle Depolarizing Pauli Channel (\texttt{idle\_depolarizing})}
+
+\subsection{Channel construction}
+This is an action-independent, idle-window-only Pauli channel.
+Given per-idle total probability $p_{\mathrm{idle}}$ and axis weights
+$w_x,w_y,w_z\ge 0$, define normalized weights
+\begin{equation}
+\tilde w_\alpha = \frac{w_\alpha}{w_x+w_y+w_z},
+\qquad \alpha\in\{x,y,z\}.
+\end{equation}
+Then per-idle axis probabilities are
+\begin{equation}
+p_x=\tilde w_x p_{\mathrm{idle}},
+\quad
+p_y=\tilde w_y p_{\mathrm{idle}},
+\quad
+p_z=\tilde w_z p_{\mathrm{idle}}.
+\label{eq:idle_axis_probs}
+\end{equation}
+In code, this is implemented via constant rate functions
+$\lambda_\alpha=p_\alpha/\tau_{\mathrm{idle}}$ integrated over each idle window,
+which exactly recovers Eq.~\eqref{eq:idle_axis_probs}.
+
+At each idle window and each qubit, simulator appends
+\texttt{PAULI\_CHANNEL\_1([$p_x,p_y,p_z$])}.
+
+\subsection{Parameter selection}
+\begin{enumerate}[label=\textbf{I\arabic*}.]
+\item Choose $p_{\mathrm{idle}}$ from target per-window error budget.
+\item Use equal weights for isotropic idle noise; use biased weights
+for dephasing-dominant or amplitude-like regimes.
+\item Ensure validity: $p_x,p_y,p_z\ge 0$ and
+$p_x+p_y+p_z\le 1$.
+\item If starting from a per-circuit budget $P_{\mathrm{circ}}$ over $N_w$ idle windows,
+convert by
+\begin{equation}
+p_{\mathrm{idle}}=1-(1-P_{\mathrm{circ}})^{1/N_w}.
+\label{eq:idle_budget_conversion}
+\end{equation}
+\end{enumerate}
+
+\section{Channel IV: Parametric Google Gate-Specific (\texttt{parametric\_google})}
+
+\subsection{Channel construction}
+This channel uses the same gate-specific machinery as Channel II,
+but introduces explicit regime parameters
+$a=\texttt{channel\_regime\_a}$ and
+$b=\texttt{channel\_regime\_b}$.
+Code rescales both base rates and sensitivities:
+\begin{align}
+p_{1q}^{0}&\mapsto a\,p_{1q}^{0}, & s_{1q}&\mapsto a\,s_{1q},\\
+p_{2q}^{0}&\mapsto b\,p_{2q}^{0}, & s_{2q}&\mapsto b\,s_{2q}.
+\end{align}
+Hence Eq.~\eqref{eq:gate_specific_probs} becomes
+\begin{align}
+p_{1q,i}&=\mathrm{clip}_{p_{\max}}\!\left(a\left[p_{1q}^{0}+s_{1q}\delta_{1q,i}^2\right]\right),\\
+p_{2q,i}&=\mathrm{clip}_{p_{\max}}\!\left(b\left[p_{2q}^{0}+s_{2q}\delta_{2q,i}^2\right]\right),
+\end{align}
+where $\delta_{1q,i},\delta_{2q,i}$ denote corresponding slot mismatch magnitudes.
+
+\subsection{Parameter selection}
+\begin{enumerate}[label=\textbf{P\arabic*}.]
+\item Use $(a,b)$ for structured regime sweeps while keeping architecture fixed.
+\item $a$ primarily controls 1q channel severity; $b$ controls 2q severity.
+\item For fair comparisons, keep all non-channel hyperparameters fixed and vary only $(a,b)$.
+\end{enumerate}
+
+\section{Channel V: Correlated Pauli Idle Channel (\texttt{correlated\_pauli\_noise\_channel})}
+
+\subsection{Design goal and constraints}
+This is the only stateful, temporally correlated channel in current code.
+It is built as a Hidden-Markov Pauli process injected on idle windows.
+The implementation enforces:
+\begin{enumerate}[label=\textbf{C\arabic*}.]
+\item Qubit independence: each qubit has its own hidden chain(s).
+\item Direction independence: X/Y/Z use identical $(f,g)$ statistics.
+\item Equal axis weights are required ($w_x=w_y=w_z$).
+\end{enumerate}
+
+\subsection{Step 1: mismatch to target total probability}
+Using global mismatch at current step,
+\begin{equation}
+m=\frac{1}{d}\sum_{k=1}^{d}(u_k-u_k^\star(0))^2,
+\end{equation}
+define base strength
+\begin{equation}
+s_{\mathrm{base}}=p_{1q}^{0}+s_{1q}m,
+\end{equation}
+and raw target
+\begin{equation}
+p_{\mathrm{target}}=\mathrm{clip}_{p_{\max}}(g\,s_{\mathrm{base}}).
+\label{eq:corr_target}
+\end{equation}
+
+Two $g$ modes:
+\begin{itemize}
+\item \texttt{per\_window}: $p_{\mathrm{nom}}=p_{\mathrm{target}}$.
+\item \texttt{per\_circuit}: for normalization windows $N_w$,
+\begin{equation}
+p_{\mathrm{nom}}=1-(1-p_{\mathrm{target}})^{1/N_w}.
+\label{eq:per_circuit_norm}
+\end{equation}
+\end{itemize}
+Then clip $p_{\mathrm{nom}}$ to $[0,p_{\max}]$.
+
+\subsection{Step 2: convert total probability to per-axis mean}
+Let $p$ be per-axis Bernoulli mean (same for X/Y/Z).
+The non-identity probability in one idle window is
+\begin{equation}
+p_{\mathrm{tot}} = 1-\Pr(I)=1-\bigl((1-p)^3+p^3\bigr)=3p(1-p).
+\label{eq:tot_to_axis}
+\end{equation}
+Code solves this as
+\begin{equation}
+p=\frac{1-\sqrt{1-\frac{4}{3}p_{\mathrm{tot}}}}{2},
+\qquad
+p_{\mathrm{tot}}\le 0.75.
+\end{equation}
+Hence it clips
+$p_{\mathrm{tot}}=\min\{p_{\mathrm{nom}},0.75-\varepsilon\}$.
+
+\subsection{Step 3: Hidden-Markov telegraph process}
+For each qubit $q$ and each axis $\alpha\in\{X,Y,Z\}$,
+introduce hidden state $s_{\alpha,q,t}\in\{0,1\}$ with emission probs
+\begin{equation}
+p_{\mathrm{low}}=0,
+\qquad
+p_{\mathrm{high}}=\min\{2p,1\}.
+\end{equation}
+Transition matrix is symmetric:
+\begin{equation}
+T=
+\begin{pmatrix}
+1-\gamma & \gamma\\
+\gamma & 1-\gamma
+\end{pmatrix},
+\qquad
+\gamma=\frac{1-e^{-f\tau_{\mathrm{idle}}}}{2},
+\label{eq:corr_transition}
+\end{equation}
+where $f=\texttt{corr\_frequency\_hz}$.
+Initial distribution is $(0.5,0.5)$.
+
+\subsection{Step 4: per-window sampling and injection}
+For each idle window $t$:
+\begin{enumerate}[label=\textbf{H\arabic*}.]
+\item Sample events
+$e_{\alpha,q,t}\sim \mathrm{Bernoulli}(p_{s_{\alpha,q,t}})$.
+\item Advance hidden states with Eq.~\eqref{eq:corr_transition}.
+\item Append Pauli gates to noisy circuit:
+\texttt{X} on all qubits with $e_{X,q,t}=1$, similarly for \texttt{Y}, \texttt{Z}.
+\end{enumerate}
+Multiple axes may fire on one qubit in the same window.
+
+\subsection{Physical interpretation and parameter selection}
+\paragraph{Correlation frequency $f$.}
+From Eq.~\eqref{eq:corr_transition}, one-step correlation factor is
+$\rho=e^{-f\tau_{\mathrm{idle}}}$.
+Thus physical correlation time is approximately
+\begin{equation}
+\tau_c\approx \frac{1}{f}.
+\end{equation}
+Small $f$ gives longer memory (low-frequency drift), large $f$ gives faster mixing.
+
+\paragraph{Strength $g$.}
+From Eq.~\eqref{eq:corr_target}, $g$ scales the mismatch-driven base strength.
+For a target budget $P$ and estimated mismatch $m$, a first-order choice is
+\begin{equation}
+g \approx \frac{P}{p_{1q}^{0}+s_{1q}m}
+\quad
+\text{(before clipping effects).}
+\end{equation}
+
+\paragraph{$g$-mode choice.}
+\begin{itemize}
+\item Use \texttt{per\_window} when all compared experiments have similar circuit length.
+\item Use \texttt{per\_circuit} when comparing different round/circuit lengths and you want length-normalized budgets.
+\end{itemize}
+
+\subsection{Statefulness and runtime semantics}
+This model is stateful across consecutive \texttt{apply(...)} calls within one shot.
+Therefore:
+\begin{enumerate}[label=\textbf{R\arabic*}.]
+\item apply-result cache is disabled by design;
+\item hidden states are reset at shot start via \texttt{start\_shot()};
+\item Steane adapter forces effective \texttt{shot\_workers=1} for this channel.
+\end{enumerate}
+These constraints preserve correct temporal-memory semantics.
+
+\section{Recommended Methods Reporting Template}
+
+For reproducibility, report at least:
+\begin{enumerate}[leftmargin=2em]
+\item Exact channel key and resolved mode (avoid only writing ``auto").
+\item Base rates/sensitivities: $p_{1q}^{0},p_{2q}^{0},s_{1q},s_{2q},p_{\max}$.
+\item For gate-specific models: $N_{1q},N_{2q}$ and slot-mapping policy.
+\item For idle models: $\tau_{\mathrm{idle}}$, axis weights, and per-window or per-circuit budget definition.
+\item For correlated model: $(f,g)$, $g$-mode, normalization windows $N_w$, and any clipping regime.
+\item Runtime semantics affecting statistics: trace mode, shot workers, state reset policy.
+\end{enumerate}
+
+\end{document}

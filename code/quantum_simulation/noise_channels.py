@@ -39,6 +39,7 @@ SteaneNoiseChannel = Literal[
     "parametric_google",
     "correlated_pauli_noise_channel",
 ]
+CorrelatedStrengthMode = Literal["per_window", "per_circuit"]
 
 
 def available_steane_noise_channels() -> Tuple[str, ...]:
@@ -115,6 +116,8 @@ def build_correlated_pauli_noise_channel(
     p_clip_max: float,
     corr_strength_g: float,
     corr_frequency_hz: float,
+    corr_strength_mode: CorrelatedStrengthMode = "per_window",
+    corr_normalization_windows: int | None = None,
     axis_weights: Sequence[float] = (1.0, 1.0, 1.0),
     enabled: bool = True,
 ) -> tuple[HiddenMarkovCorrelatedPauliNoiseModel, float]:
@@ -159,15 +162,39 @@ def build_correlated_pauli_noise_channel(
         )
 
     g = max(0.0, float(corr_strength_g))
+    strength_mode = str(corr_strength_mode)
+    if strength_mode not in ("per_window", "per_circuit"):
+        raise ValueError(
+            f"Unknown corr_strength_mode={corr_strength_mode}. "
+            "Expected one of: per_window, per_circuit."
+        )
     f_hz = max(0.0, float(corr_frequency_hz))
     clip_max = float(p_clip_max)
 
-    # Mean total non-identity probability per idle.
+    # Mean total non-identity probability calibration.
     delta_sq = np.square(action_vec - opt)
     mismatch_global = float(np.mean(delta_sq))
+    base_strength = float(p_1q_base) + float(sensitivity_1q) * mismatch_global
+    p_total_target = float(np.clip(base_strength * g, 0.0, clip_max))
+    norm_windows = 1
+    if strength_mode == "per_window":
+        p_total_nominal = p_total_target
+    else:
+        norm_windows = int(corr_normalization_windows) if corr_normalization_windows is not None else 1
+        if norm_windows <= 0:
+            raise ValueError(
+                "corr_normalization_windows must be a positive integer when "
+                "corr_strength_mode='per_circuit'."
+            )
+        # Convert one-circuit budget to one-idle-window mean probability.
+        # If each idle window had mean p and windows were independent,
+        #   P(any non-identity over N windows) = 1 - (1-p)^N.
+        # We invert this mapping so `g` can be interpreted at circuit scale.
+        p_total_nominal = float(1.0 - float((1.0 - p_total_target) ** (1.0 / float(norm_windows))))
+
     p_total_nominal = float(
         np.clip(
-            (float(p_1q_base) + float(sensitivity_1q) * mismatch_global) * g,
+            p_total_nominal,
             0.0,
             clip_max,
         )
@@ -204,7 +231,10 @@ def build_correlated_pauli_noise_channel(
     noise.model_metadata = {
         "corr_f_hz": float(f_hz),
         "corr_g": float(g),
+        "corr_g_mode_per_circuit": int(strength_mode == "per_circuit"),
+        "corr_norm_windows": int(norm_windows),
         "gamma": float(gamma),
+        "p_total_target": float(p_total_target),
         "p_total_nominal": float(p_total_nominal),
         "p_total_effective": float(p_total_effective),
         "p_axis_mean": float(p_axis_mean),
@@ -235,6 +265,8 @@ def build_steane_rl_noise_model(
     idle_pz_weight: float,
     channel_corr_f: float,
     channel_corr_g: float,
+    channel_corr_g_mode: CorrelatedStrengthMode,
+    channel_corr_windows_per_step: int,
     channel_regime_a: float,
     channel_regime_b: float,
     enabled: bool = True,
@@ -317,6 +349,8 @@ def build_steane_rl_noise_model(
             sensitivity_1q=float(sensitivity_1q),
             p_clip_max=float(p_clip_max),
             corr_strength_g=float(channel_corr_g),
+            corr_strength_mode=channel_corr_g_mode,
+            corr_normalization_windows=int(channel_corr_windows_per_step),
             corr_frequency_hz=float(channel_corr_f),
             axis_weights=(float(idle_px_weight), float(idle_py_weight), float(idle_pz_weight)),
             enabled=enabled,

@@ -165,6 +165,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Scales the nominal total Pauli error probability."
         ),
     )
+    parser.add_argument(
+        "--steane-channel-corr-g-mode",
+        choices=["per_window", "per_circuit"],
+        default="per_window",
+        help=(
+            "How to interpret correlated-channel g: "
+            "per_window keeps legacy per-idle calibration; "
+            "per_circuit normalizes by current circuit length."
+        ),
+    )
     # Deprecated aliases kept for backward compatibility with existing scripts.
     parser.add_argument("--steane-channel-regime-a", type=float, default=1.0)
     parser.add_argument("--steane-channel-regime-b", type=float, default=1.0)
