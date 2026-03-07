@@ -445,3 +445,39 @@ Interpretation:
   optimization mismatch, not a hard architecture failure.
 - After tuning, wider+LayerNorm MLP is close to stage8 baseline but still not
   clearly better in this 10-seed confirmation.
+
+## Update (2026-03-07): Stage7 with Composed Correlated Channel (`f=1e3`, `g=1.6`)
+
+New run:
+
+- `code/data_generated/steane_stage7_composed_f1e3_g16/summary.json`
+  (stage7 only, 10 seeds)
+
+Protocol notes:
+
+- Stage template: default `stage7_progressive_scale`
+- Global channel override: `composed_google_gate_specific_correlated`
+- Correlated params: `steane_channel_corr_f=1000.0`, `steane_channel_corr_g=1.6`,
+  `steane_channel_corr_g_mode=per_circuit`
+- Seed parallelism: `--seed-workers 5`
+
+### Aggregate result
+
+| Stage | Seeds | improve(LER~) mean +- std | 95% CI (mean) | learned success mean +- std | sign count | one-sided sign-test p |
+|---|---:|---:|---:|---:|---:|---:|
+| stage7_progressive_scale (composed f1e3 g1.6) | 10 | `+36.91% +- 6.96%` | `[+32.60%, +41.22%]` | `91.63% +- 1.60%` | `10+/0-/0` | `0.00098` |
+
+### Comparison against prior stage7 record
+
+- Prior stage7 in this document: `+33.97% +- 9.24%` (LER~ improvement).
+- Current composed-correlated stage7: `+36.91% +- 6.96%`.
+- Delta (current - prior): `+2.94` percentage points.
+
+Interpretation:
+
+- Under this composed correlated setting, stage7 again shows a strong and
+  consistent positive learning effect (all 10 seeds positive).
+- Variance is lower than the prior stage7 record, which improves confidence in
+  the sign and stability of the effect for this setting.
+- This comparison is indicative (not strictly apples-to-apples causal), because
+  the noise-channel family/parameters differ from the earlier stage7 baseline.

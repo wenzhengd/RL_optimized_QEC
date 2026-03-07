@@ -6,7 +6,7 @@
 - Scope: `correlated_pauli_noise_channel` runtime in Steane RL loops
 - Progress:
   - Phase A complete: correlated kernel vectorization + safe event caching
-  - Phase B partial complete: one-pass composed channel executor added for
+  - Phase B complete: one-pass composed channel executor added for
     `google + correlated` composition
 
 ## Problem Summary

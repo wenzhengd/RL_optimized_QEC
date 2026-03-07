@@ -1,0 +1,5 @@
+{
+  "steane_channel_corr_f": 1000.0,
+  "steane_channel_corr_g": 1.6,
+  "steane_channel_corr_g_mode": "per_circuit"
+}

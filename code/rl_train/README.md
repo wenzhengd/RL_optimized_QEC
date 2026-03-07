@@ -289,14 +289,14 @@ python -m rl_train.benchmarks.eval_steane_ppo \
 Where to plug in your own correlated physics model:
 
 - Edit this builder:
-  [code/quantum_simulation/noise_channels.py](/Users/wenzheng/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_channels.py)
+  [code/quantum_simulation/noise_channels.py](../quantum_simulation/noise_channels.py)
   `build_correlated_pauli_noise_channel(...)`
 - The builder creates a two-state Hidden-Markov telegraph Pauli channel with:
   - explicit correlation frequency `f` and strength scale `g`
   - qubit-independent and direction-independent dynamics
   - independent X/Y/Z hidden chains sharing the same `(f,g)` parameters.
 - Actual stateful injection logic lives in:
-  [code/quantum_simulation/noise_engine.py](/Users/wenzheng/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_engine.py)
+  [code/quantum_simulation/noise_engine.py](../quantum_simulation/noise_engine.py)
   `HiddenMarkovCorrelatedPauliNoiseModel`.
 - One-pass gate+idle composition lives in the same file as:
   `ComposedGateAndCorrelatedIdleNoiseModel`.
