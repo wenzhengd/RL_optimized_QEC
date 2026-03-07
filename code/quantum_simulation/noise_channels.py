@@ -13,6 +13,7 @@ import numpy as np
 
 try:
     from .noise_engine import (
+        ComposedGateAndCorrelatedIdleNoiseModel,
         GateDurations,
         GoogleLikeDepolarizingNoiseModel,
         GoogleLikeGateSpecificNoiseModel,
@@ -23,6 +24,7 @@ try:
 except ImportError:
     # Script-local import path, e.g. from `quantum_simulation/` directory.
     from noise_engine import (  # type: ignore
+        ComposedGateAndCorrelatedIdleNoiseModel,
         GateDurations,
         GoogleLikeDepolarizingNoiseModel,
         GoogleLikeGateSpecificNoiseModel,
@@ -38,6 +40,8 @@ SteaneNoiseChannel = Literal[
     "idle_depolarizing",
     "parametric_google",
     "correlated_pauli_noise_channel",
+    "composed_google_global_correlated",
+    "composed_google_gate_specific_correlated",
 ]
 CorrelatedStrengthMode = Literal["per_window", "per_circuit"]
 
@@ -51,6 +55,8 @@ def available_steane_noise_channels() -> Tuple[str, ...]:
         "idle_depolarizing",
         "parametric_google",
         "correlated_pauli_noise_channel",
+        "composed_google_global_correlated",
+        "composed_google_gate_specific_correlated",
     )
 
 
@@ -357,6 +363,86 @@ def build_steane_rl_noise_model(
         )
         # This channel is idle-Pauli based; report one proxy scale for both slots.
         return noise, float(p_proxy), float(p_proxy), resolved
+
+    if resolved == "composed_google_global_correlated":
+        gate_noise = GoogleLikeDepolarizingNoiseModel(
+            control=action,
+            optimal_control_fn=optimal_control_fn,
+            p_1q_base=float(p_1q_base) * reg_a,
+            p_2q_base=float(p_2q_base) * reg_b,
+            sensitivity_1q=float(sensitivity_1q) * reg_a,
+            sensitivity_2q=float(sensitivity_2q) * reg_b,
+            p_clip_max=float(p_clip_max),
+            enabled=enabled,
+        )
+        idle_noise, _ = build_correlated_pauli_noise_channel(
+            action=action.astype(float),
+            optimal_control_fn=optimal_control_fn,
+            p_1q_base=float(p_1q_base),
+            sensitivity_1q=float(sensitivity_1q),
+            p_clip_max=float(p_clip_max),
+            corr_strength_g=float(channel_corr_g),
+            corr_strength_mode=channel_corr_g_mode,
+            corr_normalization_windows=int(channel_corr_windows_per_step),
+            corr_frequency_hz=float(channel_corr_f),
+            axis_weights=(float(idle_px_weight), float(idle_py_weight), float(idle_pz_weight)),
+            enabled=enabled,
+        )
+        noise = ComposedGateAndCorrelatedIdleNoiseModel(gate_model=gate_noise, idle_model=idle_noise)
+        p_1q, p_2q = gate_noise.effective_error_rates(0.0)
+        model_meta: dict[str, float | int] = {
+            "composed_gate_component": 1,
+            "composed_idle_component": 1,
+            "composed_gate_global": 1,
+        }
+        idle_meta = getattr(idle_noise, "model_metadata", None)
+        if isinstance(idle_meta, dict):
+            for k, v in idle_meta.items():
+                if isinstance(v, (int, float)):
+                    model_meta[f"idle_{k}"] = v
+        noise.model_metadata = model_meta
+        return noise, float(p_1q), float(p_2q), resolved
+
+    if resolved == "composed_google_gate_specific_correlated":
+        gate_noise = GoogleLikeGateSpecificNoiseModel(
+            control=action,
+            optimal_control_fn=optimal_control_fn,
+            p_1q_base=float(p_1q_base) * reg_a,
+            p_2q_base=float(p_2q_base) * reg_b,
+            sensitivity_1q=float(sensitivity_1q) * reg_a,
+            sensitivity_2q=float(sensitivity_2q) * reg_b,
+            n_1q_slots=int(n_1q_slots),
+            n_2q_slots=int(n_2q_slots),
+            p_clip_max=float(p_clip_max),
+            enabled=enabled,
+        )
+        idle_noise, _ = build_correlated_pauli_noise_channel(
+            action=action.astype(float),
+            optimal_control_fn=optimal_control_fn,
+            p_1q_base=float(p_1q_base),
+            sensitivity_1q=float(sensitivity_1q),
+            p_clip_max=float(p_clip_max),
+            corr_strength_g=float(channel_corr_g),
+            corr_strength_mode=channel_corr_g_mode,
+            corr_normalization_windows=int(channel_corr_windows_per_step),
+            corr_frequency_hz=float(channel_corr_f),
+            axis_weights=(float(idle_px_weight), float(idle_py_weight), float(idle_pz_weight)),
+            enabled=enabled,
+        )
+        noise = ComposedGateAndCorrelatedIdleNoiseModel(gate_model=gate_noise, idle_model=idle_noise)
+        p_1q, p_2q = gate_noise.effective_error_rates(0.0)
+        model_meta = {
+            "composed_gate_component": 1,
+            "composed_idle_component": 1,
+            "composed_gate_global": 0,
+        }
+        idle_meta = getattr(idle_noise, "model_metadata", None)
+        if isinstance(idle_meta, dict):
+            for k, v in idle_meta.items():
+                if isinstance(v, (int, float)):
+                    model_meta[f"idle_{k}"] = v
+        noise.model_metadata = model_meta
+        return noise, float(p_1q), float(p_2q), resolved
 
     raise ValueError(
         f"Unknown noise_channel '{noise_channel}'. "

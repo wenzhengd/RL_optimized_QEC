@@ -257,6 +257,9 @@ In `train.py`, replace:
     `--steane-channel-regime-a` and `--steane-channel-regime-b`.
   - `--steane-noise-channel correlated_pauli_noise_channel`: temporally correlated
     idle Pauli channel with explicit `(f,g)` controls and direction/qubit independence.
+  - `--steane-noise-channel composed_google_gate_specific_correlated` /
+    `composed_google_global_correlated`: one-pass composed model that injects
+    Google-like gate depolarizing noise and correlated idle Pauli noise together.
   - idle channel parameters:
     `--steane-idle-p-total-per-idle`, `--steane-idle-px-weight`, `--steane-idle-py-weight`,
     `--steane-idle-pz-weight`.
@@ -277,7 +280,7 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --steane-shots-per-step 2 \
   --post-eval-episodes 1 \
   --eval-steane-shots-per-step 2 \
-  --steane-noise-channel correlated_pauli_noise_channel \
+  --steane-noise-channel composed_google_gate_specific_correlated \
   --steane-channel-corr-f 1e4 \
   --steane-channel-corr-g 1.0 \
   --steane-channel-corr-g-mode per_circuit
@@ -295,6 +298,8 @@ Where to plug in your own correlated physics model:
 - Actual stateful injection logic lives in:
   [code/quantum_simulation/noise_engine.py](/Users/wenzheng/Desktop/RL_QEC_control_tuning/code/quantum_simulation/noise_engine.py)
   `HiddenMarkovCorrelatedPauliNoiseModel`.
+- One-pass gate+idle composition lives in the same file as:
+  `ComposedGateAndCorrelatedIdleNoiseModel`.
 - For correctness, this channel runs with effective `shot_workers=1`
   (state is reset at each shot and evolves across idle windows inside that shot).
 - Two stepping modes:

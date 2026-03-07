@@ -458,6 +458,10 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         self.tolerance = float(tolerance)
         self.durations = durations if durations is not None else GateDurations()
         self.timeline_builder = TimelineBuilder(self.durations)
+        # Cache deterministic timeline structure for repeated template circuits.
+        # We intentionally do NOT cache sampled noisy outputs.
+        self._events_cache: Dict[int, Tuple[stim.Circuit, List[OperationEvent]]] = {}
+        self._events_cache_max: int = 32
 
         probs = np.asarray(p_by_state, dtype=float).reshape(-1)
         if probs.size < 2:
@@ -482,6 +486,23 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         if np.any(np.abs(row_sums - 1.0) > 1e-9):
             raise ValueError("Each row of transition_matrix must sum to 1.")
         self._transition = np.clip(t, 0.0, 1.0)
+        self._transition_cdf = np.cumsum(self._transition, axis=1)
+        # Fast-path detector for 2-state symmetric telegraph chain:
+        # [[1-gamma, gamma], [gamma, 1-gamma]].
+        self._fast_two_state_symmetric = False
+        self._fast_gamma = 0.0
+        if self._num_states == 2:
+            t01 = float(self._transition[0, 1])
+            t10 = float(self._transition[1, 0])
+            t00 = float(self._transition[0, 0])
+            t11 = float(self._transition[1, 1])
+            if (
+                abs(t01 - t10) <= 1e-12
+                and abs(t00 - t11) <= 1e-12
+                and abs(t00 - (1.0 - t01)) <= 1e-12
+            ):
+                self._fast_two_state_symmetric = True
+                self._fast_gamma = float(np.clip(0.5 * (t01 + t10), 0.0, 1.0))
 
         if initial_distribution is None:
             pi = np.full(self._num_states, 1.0 / float(self._num_states), dtype=float)
@@ -529,29 +550,38 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         self._axis_states = np.asarray(states, dtype=np.int64)
         self._num_qubits_state = int(num_qubits)
 
-    def _sample_axis_event_and_advance(self, axis_index: int, qubit_index: int) -> bool:
-        assert self._axis_states is not None
-        s = int(self._axis_states[axis_index, qubit_index])
-        p = float(self._p_by_state[s])
-        event = bool(float(self._rng.random()) < p)
-        row = self._transition[s]
-        self._axis_states[axis_index, qubit_index] = int(self._rng.choice(self._num_states, p=row))
-        return event
+    def _advance_states_inplace(self, states: np.ndarray) -> None:
+        """Advance hidden states for one idle window.
+
+        `states` is expected to be an integer ndarray view of current states.
+        """
+        flat = states.reshape(-1)
+        if flat.size == 0:
+            return
+        if self._fast_two_state_symmetric:
+            flips = self._rng.random(flat.size) < float(self._fast_gamma)
+            flat ^= flips.astype(np.int64)
+            return
+
+        # Generic vectorized transition sampling for arbitrary state count.
+        rows_cdf = self._transition_cdf[flat]
+        u = self._rng.random(flat.size)
+        next_flat = np.sum(u[:, None] > rows_cdf, axis=1, dtype=np.int64)
+        np.minimum(next_flat, self._num_states - 1, out=next_flat)
+        flat[:] = next_flat
 
     def _append_idle_window_noise(self, noisy_circuit: stim.Circuit, num_qubits: int) -> None:
         self._ensure_state_initialized(num_qubits=num_qubits)
         assert self._axis_states is not None
 
-        x_targets: List[int] = []
-        y_targets: List[int] = []
-        z_targets: List[int] = []
-        for q in range(num_qubits):
-            if self._sample_axis_event_and_advance(axis_index=0, qubit_index=q):
-                x_targets.append(q)
-            if self._sample_axis_event_and_advance(axis_index=1, qubit_index=q):
-                y_targets.append(q)
-            if self._sample_axis_event_and_advance(axis_index=2, qubit_index=q):
-                z_targets.append(q)
+        states = self._axis_states
+        probs = self._p_by_state[states]
+        events = self._rng.random(states.shape) < probs
+        self._advance_states_inplace(states)
+
+        x_targets = np.flatnonzero(events[0]).astype(int).tolist()
+        y_targets = np.flatnonzero(events[1]).astype(int).tolist()
+        z_targets = np.flatnonzero(events[2]).astype(int).tolist()
 
         # Applying multiple axes on one qubit is allowed; Stim handles Pauli products.
         if x_targets:
@@ -565,7 +595,15 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         if not self.enabled:
             return circuit
 
-        events = self.timeline_builder.build_events(circuit)
+        cache_key = int(id(circuit))
+        cached = self._events_cache.get(cache_key)
+        if cached is not None and cached[0] is circuit:
+            events = cached[1]
+        else:
+            events = self.timeline_builder.build_events(circuit)
+            if len(self._events_cache) >= self._events_cache_max:
+                self._events_cache.clear()
+            self._events_cache[cache_key] = (circuit, events)
         if not events:
             return circuit
 
@@ -667,6 +705,88 @@ class GateDepolarizingNoiseModel(NoiseModel):
         return noisy
 
 
+class ComposedGateAndCorrelatedIdleNoiseModel(NoiseModel):
+    """Compose gate depolarizing and correlated idle Pauli noise in one pass.
+
+    Semantics per instruction event:
+      1) append ideal instruction
+      2) append gate depolarizing noise (if applicable)
+      3) append one correlated idle-noise window (except after last event)
+
+    This avoids double timeline traversal and keeps correlated-shot state
+    semantics intact.
+    """
+
+    def __init__(
+        self,
+        gate_model: GateDepolarizingNoiseModel,
+        idle_model: HiddenMarkovCorrelatedPauliNoiseModel,
+        *,
+        events_cache_max: int = 32,
+    ):
+        self.gate_model = gate_model
+        self.idle_model = idle_model
+        self.enabled = bool(getattr(gate_model, "enabled", True) or getattr(idle_model, "enabled", True))
+        self.disable_apply_cache = bool(
+            getattr(gate_model, "disable_apply_cache", False)
+            or getattr(idle_model, "disable_apply_cache", False)
+            or getattr(idle_model, "stateful", False)
+        )
+        self.stateful = bool(getattr(idle_model, "stateful", False))
+        self.timeline_builder = gate_model.timeline_builder
+        self._events_cache: Dict[int, Tuple[stim.Circuit, List[OperationEvent]]] = {}
+        self._events_cache_max: int = max(1, int(events_cache_max))
+        self.model_metadata: dict[str, float | int] = {}
+
+    def start_shot(self) -> None:
+        """Reset per-shot state of the correlated idle component."""
+        if hasattr(self.idle_model, "start_shot") and callable(getattr(self.idle_model, "start_shot")):
+            self.idle_model.start_shot()
+
+    def apply(self, circuit: stim.Circuit) -> stim.Circuit:
+        if not self.enabled:
+            return circuit
+
+        cache_key = int(id(circuit))
+        cached = self._events_cache.get(cache_key)
+        if cached is not None and cached[0] is circuit:
+            events = cached[1]
+        else:
+            events = self.timeline_builder.build_events(circuit)
+            if len(self._events_cache) >= self._events_cache_max:
+                self._events_cache.clear()
+            self._events_cache[cache_key] = (circuit, events)
+        if not events:
+            return circuit
+
+        noisy = stim.Circuit()
+        num_qubits = int(circuit.num_qubits)
+        for op_index, ev in enumerate(events):
+            inst = ev.instruction
+            name = inst.name
+            noisy.append(name, inst.targets_copy(), inst.gate_args_copy())
+
+            # Gate-local depolarizing component.
+            if bool(getattr(self.gate_model, "enabled", True)) and self.gate_model._allow_noise_on_instruction(name):
+                qubits = _extract_qubit_targets(inst)
+                if qubits:
+                    if name in self.gate_model._TWO_QUBIT_GATES:
+                        p2 = self.gate_model._get_p_2q(op_index, ev.start_ns, inst)
+                        if p2 > 0.0:
+                            for k in range(0, len(qubits) - 1, 2):
+                                noisy.append("DEPOLARIZE2", [qubits[k], qubits[k + 1]], [p2])
+                    else:
+                        p1 = self.gate_model._get_p_1q(op_index, ev.start_ns, inst)
+                        if p1 > 0.0:
+                            noisy.append("DEPOLARIZE1", qubits, [p1])
+
+            # Correlated idle component between consecutive ideal instructions.
+            if op_index < len(events) - 1 and bool(getattr(self.idle_model, "enabled", True)):
+                self.idle_model._append_idle_window_noise(noisy, num_qubits=num_qubits)
+
+        return noisy
+
+
 class GoogleLikeDepolarizingNoiseModel(GateDepolarizingNoiseModel):
     """Approximate Google-style drifted gate-error model.
 
@@ -675,6 +795,12 @@ class GoogleLikeDepolarizingNoiseModel(GateDepolarizingNoiseModel):
       p_2q(t) = p_2q_base + sensitivity_2q * agg((u - u_opt(t))^2)
 
     where `u` is the control vector and `u_opt(t)` is a drifting optimum.
+    
+    ---------
+    User writes:
+    p = p_base + sensitivity * mismatch，其中 p_base 是 action 无关底噪，mismatch 部分是 action 相关 ,
+    可作为 “native + action 叠加效应”， 但是 同一通道内合成.
+
     """
 
     def __init__(

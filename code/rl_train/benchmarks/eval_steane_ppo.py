@@ -140,6 +140,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "idle_depolarizing",
             "parametric_google",
             "correlated_pauli_noise_channel",
+            "composed_google_global_correlated",
+            "composed_google_gate_specific_correlated",
         ],
         default="auto",
     )
@@ -152,7 +154,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=1.0e4,
         help=(
-            "Correlation frequency f (Hz) for correlated_pauli_noise_channel. "
+            "Correlation frequency f (Hz) for correlated/composed channels. "
             "Lower f means longer temporal correlation time."
         ),
     )
@@ -161,7 +163,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=1.0,
         help=(
-            "Overall channel-strength scale g for correlated_pauli_noise_channel. "
+            "Overall channel-strength scale g for correlated/composed channels. "
             "Scales the nominal total Pauli error probability."
         ),
     )

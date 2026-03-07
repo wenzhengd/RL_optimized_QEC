@@ -65,6 +65,7 @@ class SteaneAdapterConfig:
     #   idle_depolarizing: action-independent idle Pauli channel.
     #   parametric_google: google-style channel with external regime knobs.
     #   correlated_pauli_noise_channel: custom temporally-correlated idle Pauli channel.
+    #   composed_google_*_correlated: one-pass composition of gate and idle channels.
     noise_channel: Literal[
         "auto",
         "google_global",
@@ -72,6 +73,8 @@ class SteaneAdapterConfig:
         "idle_depolarizing",
         "parametric_google",
         "correlated_pauli_noise_channel",
+        "composed_google_global_correlated",
+        "composed_google_gate_specific_correlated",
     ] = "auto"
     # Idle depolarizing parameters (used when noise_channel=idle_depolarizing).
     idle_p_total_per_idle: float = 0.0
@@ -308,9 +311,10 @@ class SteaneOnlineSteeringSimulator:
             self._sim.noise = noise
         sim = self._sim
         effective_shot_workers = int(self.cfg.shot_workers)
-        # Hidden-Markov correlated channel is stateful per shot and should run
-        # in single-worker mode to preserve correct temporal memory semantics.
-        if resolved_channel == "correlated_pauli_noise_channel":
+        # Stateful noise models keep hidden dynamics across apply(...) calls
+        # within one shot and should run in single-worker mode to preserve
+        # temporal memory semantics.
+        if bool(getattr(noise, "stateful", False)):
             effective_shot_workers = 1
         if self.cfg.collect_traces:
             # Full trace path: high-fidelity diagnostics, significantly slower.

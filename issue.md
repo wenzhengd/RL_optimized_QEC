@@ -4,6 +4,10 @@
 - Open
 - Priority: Medium-High
 - Scope: `correlated_pauli_noise_channel` runtime in Steane RL loops
+- Progress:
+  - Phase A complete: correlated kernel vectorization + safe event caching
+  - Phase B partial complete: one-pass composed channel executor added for
+    `google + correlated` composition
 
 ## Problem Summary
 `correlated_pauli_noise_channel` is significantly slower than the Google-like channels in practical training/eval runs.
@@ -33,6 +37,20 @@ Simulator-level micro benchmark (`n_steps=12`, `shots=120`):
 - Typical repeated stabilizer sub-circuit: around `~6.5%` of `apply` time.
 - This implies event-level caching alone likely gives only modest gains.
 
+After Phase A optimization (same local environment):
+- simulator micro benchmark (`n_steps=12`, `shots=120`):
+  - `correlated`: `6.565s -> 3.749s` (~`1.75x` faster)
+- tiny `eval_steane_ppo` benchmark:
+  - `correlated`: `18.80s -> 13.72s` (~`1.37x` faster)
+
+After Phase B composition path:
+- new channels:
+  - `composed_google_global_correlated`
+  - `composed_google_gate_specific_correlated`
+- apply-level runtime proxy on repeated stabilizer sub-circuit:
+  - one-pass composed apply vs separate gate+idle passes:
+    `~1.48x` faster (runtime baseline comparison)
+
 ## Risk
 - Larger staged runs can become much longer when switched to correlated channel.
 - This can reduce experiment throughput and increase iteration cost.
@@ -42,11 +60,12 @@ Simulator-level micro benchmark (`n_steps=12`, `shots=120`):
 - Reusing a previously generated noisy circuit would break Markov-state semantics and produce incorrect physics/statistics.
 
 ## Candidate Optimizations (Future Work)
-1. Vectorize correlated idle-window sampling over qubits/axes (replace Python per-qubit loops with NumPy batch ops).
-2. Cache timeline/event expansion safely (cache deterministic structure only, not sampled noisy outputs).
-3. Batch append operations to Stim where possible to reduce Python call overhead.
-4. Add optional profiling hooks to report `apply` time breakdown by model and sub-circuit.
-5. Revisit parallel strategy for correlated channel only if semantic guarantees can be preserved.
+1. Batch append operations to Stim where possible to reduce Python call overhead.
+2. Add optional profiling hooks to report `apply` time breakdown by model and sub-circuit.
+3. Revisit parallel strategy for stateful channels:
+   use per-worker/per-shot independent noise instances to re-enable shot-level parallelism safely.
+4. Add combined-channel benchmark suite (`google + correlated`) to prevent performance regressions.
+5. Extend composed executor to support more generic channel stacking patterns beyond current pair.
 
 ## Suggested Acceptance Criteria For A Future Fix
 1. Preserve correlated-channel semantics (same shot-level statefulness behavior).
