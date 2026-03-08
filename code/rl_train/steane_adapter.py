@@ -15,6 +15,7 @@ Two stepping modes are supported:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, Literal, Sequence
 
 import numpy as np
@@ -32,6 +33,12 @@ from quantum_simulation.steane_code_simulator import (
 )
 
 from .interfaces import SimulatorTransition
+
+
+def _constant_optimal_control_fn(_t_ns: float, *, optimal: np.ndarray) -> np.ndarray:
+    """Pickle-safe constant optimal-control callback for one simulator step."""
+    _ = float(_t_ns)
+    return optimal
 
 
 @dataclass
@@ -279,7 +286,10 @@ class SteaneOnlineSteeringSimulator:
         corr_windows_per_shot_est = self._estimated_noise_windows_per_shot(n_steps=n_steps)
 
         optimal = self._optimal_control(self._t)
-        optimal_fn = lambda _t_ns: optimal
+        optimal_fn = partial(
+            _constant_optimal_control_fn,
+            optimal=np.asarray(optimal, dtype=float).copy(),
+        )
         noise, p_1q, p_2q, resolved_channel = build_steane_rl_noise_model(
             noise_channel=self.cfg.noise_channel,
             control_mode=self.cfg.control_mode,
@@ -311,10 +321,9 @@ class SteaneOnlineSteeringSimulator:
             self._sim.noise = noise
         sim = self._sim
         effective_shot_workers = int(self.cfg.shot_workers)
-        # Stateful noise models keep hidden dynamics across apply(...) calls
-        # within one shot and should run in single-worker mode to preserve
-        # temporal memory semantics.
-        if bool(getattr(noise, "stateful", False)):
+        # Stateful noise models can use shot parallelism only when they expose
+        # safe per-shot forking (independent hidden state + RNG stream).
+        if bool(getattr(noise, "stateful", False)) and not bool(getattr(noise, "supports_parallel_shots", False)):
             effective_shot_workers = 1
         if self.cfg.collect_traces:
             # Full trace path: high-fidelity diagnostics, significantly slower.

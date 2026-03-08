@@ -34,10 +34,12 @@ Key features:
 
 from __future__ import annotations
 
+import pickle
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import logging
 from pathlib import Path
+import sys
 from typing import Any, Literal, Optional, Sequence
 
 import numpy as np
@@ -90,6 +92,7 @@ class _ApplyCacheNoiseModel(NoiseModel):
         self.enabled = bool(getattr(base, "enabled", True))
         self.disable_apply_cache = bool(getattr(base, "disable_apply_cache", False))
         self.stateful = bool(getattr(base, "stateful", False))
+        self.supports_parallel_shots = bool(getattr(base, "supports_parallel_shots", False))
         self._cache: dict[str, stim.Circuit] = {}
 
     def apply(self, circuit: stim.Circuit) -> stim.Circuit:
@@ -105,6 +108,59 @@ class _ApplyCacheNoiseModel(NoiseModel):
 
     def __getattr__(self, name: str):
         return getattr(self.base, name)
+
+    def fork_for_shot(self, shot_index: int) -> NoiseModel:
+        """Fork base model first, then keep apply-cache behavior per shot."""
+        fork_fn = getattr(self.base, "fork_for_shot", None)
+        if callable(fork_fn):
+            return _ApplyCacheNoiseModel(fork_fn(int(shot_index)))
+        return self
+
+
+def _parallel_noise_for_shot(noise: NoiseModel, shot_index: int) -> NoiseModel:
+    """Return shot-local noise instance when model supports safe parallel forking."""
+    if not bool(getattr(noise, "stateful", False)):
+        return noise
+    if not bool(getattr(noise, "supports_parallel_shots", False)):
+        return noise
+    fork_fn = getattr(noise, "fork_for_shot", None)
+    if not callable(fork_fn):
+        return noise
+    return fork_fn(int(shot_index))
+
+
+def _run_shot_batch(
+    shot_indices: Sequence[int],
+    initial_state: str,
+    meas_basis: str,
+    n_steps: int,
+    syndrome_mode: Literal["MV", "DE"],
+    noise: NoiseModel,
+    encoding_circuit_tpl: stim.Circuit,
+    prep_circuit_tpl: stim.Circuit,
+    stabilizer_circuit_tpls: Sequence[stim.Circuit],
+    rotate_circuit_tpl: stim.Circuit,
+    logical_measurement_circuit_tpl: stim.Circuit,
+) -> list[tuple[int, int]]:
+    """Run one batch of shots, returning `(shot_idx, success)` pairs."""
+    out: list[tuple[int, int]] = []
+    for shot_idx in shot_indices:
+        shot_noise = _parallel_noise_for_shot(noise, int(shot_idx))
+        success, _ = _run_single_shot_sequential(
+            initial_state=initial_state,
+            meas_basis=meas_basis,
+            n_steps=int(n_steps),
+            syndrome_mode=syndrome_mode,
+            noise=shot_noise,
+            save_trace=False,
+            encoding_circuit_tpl=encoding_circuit_tpl,
+            prep_circuit_tpl=prep_circuit_tpl,
+            stabilizer_circuit_tpls=stabilizer_circuit_tpls,
+            rotate_circuit_tpl=rotate_circuit_tpl,
+            logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
+        )
+        out.append((int(shot_idx), int(success)))
+    return out
 
 
 def encoding_circuit(log_qb_idx: int = 0) -> stim.Circuit:
@@ -702,8 +758,21 @@ def steane_code_exp_sequential(
     rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
     logical_measurement_circuit_tpl = measure_logical_qubits()
 
+    requested_workers = int(shot_workers)
+    if requested_workers > 1 and bool(getattr(noise, "stateful", False)):
+        # Stateful models need per-shot independent instances in parallel mode.
+        can_parallelize_stateful = bool(getattr(noise, "supports_parallel_shots", False)) and callable(
+            getattr(noise, "fork_for_shot", None)
+        )
+        if not can_parallelize_stateful:
+            LOGGER.warning(
+                "Stateful noise model does not support safe shot forking; "
+                "falling back to shot_workers=1."
+            )
+            requested_workers = 1
+
     # Fast single-thread path keeps overhead minimal for tiny shot counts.
-    if int(shot_workers) <= 1 or int(shots) <= 1:
+    if int(requested_workers) <= 1 or int(shots) <= 1:
         results: list[int] = []
         for _ in range(shots):
             success, _ = _run_single_shot_sequential(
@@ -722,10 +791,63 @@ def steane_code_exp_sequential(
             results.append(int(success))
         return results
 
-    # Thread-parallel shot execution:
-    # each shot uses its own TableauSimulator instance, so this is independent.
-    # We keep process-local threads to avoid pickling heavy noise model objects.
-    n_workers = max(1, min(int(shot_workers), int(shots)))
+    # Stateful channels with safe forking are process-parallelized to avoid GIL
+    # bottlenecks in Python-heavy noise insertion loops.
+    use_process_parallel = bool(getattr(noise, "stateful", False)) and bool(
+        getattr(noise, "supports_parallel_shots", False)
+    )
+    if use_process_parallel:
+        # Spawn-based process pools fail in interactive `<stdin>` contexts.
+        main_mod = sys.modules.get("__main__")
+        main_file = getattr(main_mod, "__file__", "")
+        if not main_file or str(main_file) == "<stdin>":
+            LOGGER.warning(
+                "Process-based shot parallelism unavailable in interactive "
+                "session; falling back to thread workers."
+            )
+            use_process_parallel = False
+        else:
+            # If model is not pickleable, process workers cannot receive it.
+            try:
+                pickle.dumps(noise)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Stateful noise model not pickleable (%s); falling back "
+                    "to thread workers.",
+                    type(exc).__name__,
+                )
+                use_process_parallel = False
+    n_workers = max(1, min(int(requested_workers), int(shots)))
+    shot_ids = list(range(int(shots)))
+    if use_process_parallel:
+        batch_size = max(1, (len(shot_ids) + n_workers - 1) // n_workers)
+        batches = [shot_ids[i : i + batch_size] for i in range(0, len(shot_ids), batch_size)]
+        results_by_shot: dict[int, int] = {}
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            futures = [
+                ex.submit(
+                    _run_shot_batch,
+                    batch,
+                    initial_state,
+                    meas_basis,
+                    n_steps,
+                    syndrome_mode,
+                    noise,  # type: ignore[arg-type]
+                    encoding_circuit_tpl,
+                    prep_circuit_tpl,
+                    stabilizer_circuit_tpls,
+                    rotate_circuit_tpl,
+                    logical_measurement_circuit_tpl,
+                )
+                for batch in batches
+            ]
+            for fut in as_completed(futures):
+                for shot_idx, success in fut.result():
+                    results_by_shot[int(shot_idx)] = int(success)
+        return [int(results_by_shot[i]) for i in shot_ids]
+
+    # Stateless channels keep thread-level shot parallelism to avoid process
+    # spawn/pickle overhead.
     with ThreadPoolExecutor(max_workers=n_workers) as ex:
         futures = [
             ex.submit(
@@ -742,7 +864,7 @@ def steane_code_exp_sequential(
                 rotate_circuit_tpl,
                 logical_measurement_circuit_tpl,
             )
-            for _ in range(shots)
+            for _ in shot_ids
         ]
         return [int(f.result()[0]) for f in futures]
 

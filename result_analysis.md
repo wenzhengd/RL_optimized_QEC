@@ -481,3 +481,40 @@ Interpretation:
   the sign and stability of the effect for this setting.
 - This comparison is indicative (not strictly apples-to-apples causal), because
   the noise-channel family/parameters differ from the earlier stage7 baseline.
+
+## Update (2026-03-07): Stage8 with Composed Correlated Channel (`f=1e3`, `g=1.6`)
+
+New run:
+
+- `code/data_generated/steane_stage8_composed_f1e3_g16/summary.json`
+  (stage8 only, 10 seeds)
+
+Protocol notes:
+
+- Stage template: default `stage8_scale_x3`
+- Global channel override: `composed_google_gate_specific_correlated`
+- Correlated params: `steane_channel_corr_f=1000.0`, `steane_channel_corr_g=1.6`,
+  `steane_channel_corr_g_mode=per_circuit`
+- Seed parallelism: `--seed-workers 5`
+
+### Aggregate result
+
+| Stage | Seeds | improve(LER~) mean +- std | 95% CI (mean) | learned success mean +- std | sign count | one-sided sign-test p |
+|---|---:|---:|---:|---:|---:|---:|
+| stage8_scale_x3 (composed f1e3 g1.6) | 10 | `+40.64% +- 15.75%` | `[+30.87%, +50.40%]` | `92.67% +- 0.85%` | `10+/0-/0` | `0.00098` |
+
+### Comparison against current composed stage7 run
+
+- stage7 (composed f1e3 g1.6): `+36.91% +- 6.96%`
+- stage8 (composed f1e3 g1.6): `+40.64% +- 15.75%`
+- Delta (stage8 - stage7): `+3.73` percentage points.
+
+Interpretation:
+
+- Stage8 remains strongly positive under the same composed correlated setting
+  (all 10 seeds positive), reinforcing the learning-advantage claim.
+- Mean improvement is higher than stage7 in this run, but variance is also
+  larger; this suggests the gain is real but still sensitive to seed-level
+  stochasticity at this budget.
+- Next step is stage9 under the same settings to test whether the curve
+  continues improving or enters a clearer plateau region.

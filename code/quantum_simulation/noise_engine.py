@@ -87,6 +87,16 @@ class NoiseModel:
         """Return circuit unchanged (noiseless baseline)."""
         return circuit
 
+    def fork_for_shot(self, shot_index: int) -> "NoiseModel":
+        """Return a shot-local noise instance for parallel execution.
+
+        Stateless models can safely return `self`. Stateful models should
+        override this and return an independent instance with an independent
+        random stream.
+        """
+        _ = int(shot_index)
+        return self
+
 
 def compile_time_expression(expr: str) -> RateFn:
     """Compile a user expression into a callable rate function.
@@ -300,6 +310,17 @@ def validate_probability(p: float, tolerance: float = 1e-12) -> float:
     return float(max(0.0, min(1.0, val)))
 
 
+def _derive_child_seed(base_seed: int, shot_index: int) -> int:
+    """Derive a deterministic uint32 child seed from (base_seed, shot_index)."""
+    x = (int(base_seed) + (int(shot_index) + 1) * 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    x ^= x >> 30
+    x = (x * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    x ^= x >> 27
+    x = (x * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    x ^= x >> 31
+    return int(x & 0xFFFFFFFF)
+
+
 def _extract_qubit_targets(instruction: stim.CircuitInstruction) -> List[int]:
     """Best-effort extraction of integer qubit targets from an instruction."""
     qubits: List[int] = []
@@ -455,9 +476,13 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         self.enabled = bool(enabled)
         self.disable_apply_cache = True
         self.stateful = True
+        self.supports_parallel_shots = True
         self.tolerance = float(tolerance)
         self.durations = durations if durations is not None else GateDurations()
         self.timeline_builder = TimelineBuilder(self.durations)
+        self._base_random_seed: Optional[int] = (
+            None if random_seed is None else int(random_seed) & 0xFFFFFFFF
+        )
         # Cache deterministic timeline structure for repeated template circuits.
         # We intentionally do NOT cache sampled noisy outputs.
         self._events_cache: Dict[int, Tuple[stim.Circuit, List[OperationEvent]]] = {}
@@ -522,7 +547,7 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         self._initial = np.clip(pi, 0.0, 1.0)
         self._initial = self._initial / float(np.sum(self._initial))
 
-        self._rng = np.random.default_rng(random_seed)
+        self._rng = np.random.default_rng(self._base_random_seed)
         # shape: (3, num_qubits), axis order [X, Y, Z]
         self._axis_states: Optional[np.ndarray] = None
         self._num_qubits_state: int = -1
@@ -532,6 +557,32 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         """Reset hidden states at the beginning of a new shot."""
         self._axis_states = None
         self._num_qubits_state = -1
+
+    def fork_for_shot(self, shot_index: int) -> "HiddenMarkovCorrelatedPauliNoiseModel":
+        """Build an independent shot-local copy with a deterministic child seed."""
+        seed: Optional[int] = None
+        if self._base_random_seed is not None:
+            seed = _derive_child_seed(self._base_random_seed, int(shot_index))
+
+        durations = GateDurations(
+            one_qubit_ns=float(self.durations.one_qubit_ns),
+            two_qubit_ns=float(self.durations.two_qubit_ns),
+            measure_ns=float(self.durations.measure_ns),
+            reset_ns=float(self.durations.reset_ns),
+            idle_ns=float(self.durations.idle_ns),
+        )
+        out = HiddenMarkovCorrelatedPauliNoiseModel(
+            p_by_state=self._p_by_state.tolist(),
+            transition_matrix=self._transition.tolist(),
+            initial_distribution=self._initial.tolist(),
+            durations=durations,
+            enabled=bool(self.enabled),
+            tolerance=float(self.tolerance),
+            random_seed=seed,
+        )
+        out._events_cache_max = int(self._events_cache_max)
+        out.model_metadata = dict(self.model_metadata)
+        return out
 
     def _ensure_state_initialized(self, num_qubits: int) -> None:
         if self._axis_states is not None and self._num_qubits_state == int(num_qubits):
@@ -733,6 +784,7 @@ class ComposedGateAndCorrelatedIdleNoiseModel(NoiseModel):
             or getattr(idle_model, "stateful", False)
         )
         self.stateful = bool(getattr(idle_model, "stateful", False))
+        self.supports_parallel_shots = bool(getattr(idle_model, "supports_parallel_shots", False))
         self.timeline_builder = gate_model.timeline_builder
         self._events_cache: Dict[int, Tuple[stim.Circuit, List[OperationEvent]]] = {}
         self._events_cache_max: int = max(1, int(events_cache_max))
@@ -742,6 +794,20 @@ class ComposedGateAndCorrelatedIdleNoiseModel(NoiseModel):
         """Reset per-shot state of the correlated idle component."""
         if hasattr(self.idle_model, "start_shot") and callable(getattr(self.idle_model, "start_shot")):
             self.idle_model.start_shot()
+
+    def fork_for_shot(self, shot_index: int) -> "ComposedGateAndCorrelatedIdleNoiseModel":
+        """Build a shot-local composed model with independent correlated state."""
+        idle = self.idle_model
+        fork_fn = getattr(idle, "fork_for_shot", None)
+        if callable(fork_fn):
+            idle = fork_fn(int(shot_index))
+        out = ComposedGateAndCorrelatedIdleNoiseModel(
+            gate_model=self.gate_model,
+            idle_model=idle,
+            events_cache_max=int(self._events_cache_max),
+        )
+        out.model_metadata = dict(self.model_metadata)
+        return out
 
     def apply(self, circuit: stim.Circuit) -> stim.Circuit:
         if not self.enabled:
