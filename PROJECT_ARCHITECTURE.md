@@ -23,8 +23,8 @@ RL_QEC_control_tuning/
 ├── resources/                         # papers and reference material
 ├── code/
 │   ├── quantum_simulation/
-│   │   ├── steane_code_simulator.py   # Steane circuit simulation + experiment APIs
-│   │   ├── noise_engine.py            # core noise model classes (Stim circuit injection)
+│   │   ├── steane_code_simulator.py   # Steane simulation + legacy/streaming execution backends
+│   │   ├── noise_engine.py            # noise model classes + shot-fork + idle streaming hooks
 │   │   ├── noise_channels.py          # noise-channel factory/registry used by RL
 │   │   └── sweep_depolarizing_test.py # simulation-only noise sweep script
 │   ├── rl_train/
@@ -116,12 +116,43 @@ Supported channel keys:
 - `idle_depolarizing`
 - `parametric_google`
 - `correlated_pauli_noise_channel`
+- `composed_google_global_correlated`
+- `composed_google_gate_specific_correlated`
 
 Selection path:
 1. CLI `--steane-noise-channel` from `train.py` / `eval_steane_ppo.py`
 2. Stored in `SteaneAdapterConfig.noise_channel`
 3. Resolved inside `build_steane_rl_noise_model(...)`
 4. Concrete noise model object attached to `SteaneQECSimulator`
+
+## 6.1 Simulator Backend Modes (Important)
+
+`quantum_simulation/steane_code_simulator.py` now has two execution styles:
+
+- Legacy path:
+  - build noisy circuit via `noise.apply(circuit)`
+  - execute noisy circuit with `simulator.do(...)`
+- Streaming fast path (for correlated/composed channels):
+  - compile per-template event plan once
+  - execute ideal instructions directly
+  - inject sampled idle/gate noise directly into running `TableauSimulator`
+  - avoids repeated noisy-circuit materialization
+
+Backend toggle:
+
+- default: streaming fast path enabled
+- set env `STEANE_DISABLE_STREAMING_NOISE=1` to force legacy behavior
+
+Parallel-safety contract for stateful correlated channels:
+
+- each shot must use independent noise instance/RNG stream
+- implemented via `NoiseModel.fork_for_shot(...)`
+- stateful channels advertise `supports_parallel_shots=True` only when safe
+
+Performance note:
+
+- kernel-level simulator speedup is large for correlated/composed channels
+- end-to-end RL speedup depends on how much total runtime is simulator-bound
 
 ## 7. Extension Points (Recommended)
 
@@ -144,10 +175,11 @@ Selection path:
 
 ### 7.3 Replace Correlated Channel Physics
 Edit only:
-- `correlated_pauli_model_kernel(...)` in `quantum_simulation/noise_channels.py`
+- `build_correlated_pauli_noise_channel(...)` in `quantum_simulation/noise_channels.py`
 
 Keep contract:
-- return `p_total(q,t)` in `[0, p_clip_max]`.
+- return a `HiddenMarkovCorrelatedPauliNoiseModel` with calibrated
+  stationary channel strength and valid metadata.
 
 ## 8. Data/Output Conventions
 

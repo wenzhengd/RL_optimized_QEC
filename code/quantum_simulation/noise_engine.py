@@ -621,7 +621,8 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         np.minimum(next_flat, self._num_states - 1, out=next_flat)
         flat[:] = next_flat
 
-    def _append_idle_window_noise(self, noisy_circuit: stim.Circuit, num_qubits: int) -> None:
+    def _sample_idle_events_and_advance(self, num_qubits: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sample one idle-window Pauli event mask and advance hidden states."""
         self._ensure_state_initialized(num_qubits=num_qubits)
         assert self._axis_states is not None
 
@@ -630,17 +631,32 @@ class HiddenMarkovCorrelatedPauliNoiseModel(NoiseModel):
         events = self._rng.random(states.shape) < probs
         self._advance_states_inplace(states)
 
-        x_targets = np.flatnonzero(events[0]).astype(int).tolist()
-        y_targets = np.flatnonzero(events[1]).astype(int).tolist()
-        z_targets = np.flatnonzero(events[2]).astype(int).tolist()
+        x_targets = np.flatnonzero(events[0])
+        y_targets = np.flatnonzero(events[1])
+        z_targets = np.flatnonzero(events[2])
+        return x_targets, y_targets, z_targets
+
+    def _append_idle_window_noise(self, noisy_circuit: stim.Circuit, num_qubits: int) -> None:
+        x_targets, y_targets, z_targets = self._sample_idle_events_and_advance(num_qubits=num_qubits)
 
         # Applying multiple axes on one qubit is allowed; Stim handles Pauli products.
-        if x_targets:
+        if x_targets.size > 0:
             noisy_circuit.append("X", x_targets)
-        if y_targets:
+        if y_targets.size > 0:
             noisy_circuit.append("Y", y_targets)
-        if z_targets:
+        if z_targets.size > 0:
             noisy_circuit.append("Z", z_targets)
+
+    def apply_idle_window_to_simulator(self, simulator: stim.TableauSimulator, num_qubits: int) -> None:
+        """Apply one sampled idle-noise window directly to a running simulator."""
+        x_targets, y_targets, z_targets = self._sample_idle_events_and_advance(num_qubits=num_qubits)
+
+        for q in x_targets:
+            simulator.x(int(q))
+        for q in y_targets:
+            simulator.y(int(q))
+        for q in z_targets:
+            simulator.z(int(q))
 
     def apply(self, circuit: stim.Circuit) -> stim.Circuit:
         if not self.enabled:
@@ -745,8 +761,9 @@ class GateDepolarizingNoiseModel(NoiseModel):
                 if p2 == 0.0:
                     continue
                 # DEPOLARIZE2 consumes targets in pairs.
-                for k in range(0, len(qubits) - 1, 2):
-                    noisy.append("DEPOLARIZE2", [qubits[k], qubits[k + 1]], [p2])
+                pair_targets = qubits[: (len(qubits) // 2) * 2]
+                if pair_targets:
+                    noisy.append("DEPOLARIZE2", pair_targets, [p2])
             else:
                 p1 = self._get_p_1q(op_index, ev.start_ns, inst)
                 if p1 == 0.0:
@@ -839,8 +856,9 @@ class ComposedGateAndCorrelatedIdleNoiseModel(NoiseModel):
                     if name in self.gate_model._TWO_QUBIT_GATES:
                         p2 = self.gate_model._get_p_2q(op_index, ev.start_ns, inst)
                         if p2 > 0.0:
-                            for k in range(0, len(qubits) - 1, 2):
-                                noisy.append("DEPOLARIZE2", [qubits[k], qubits[k + 1]], [p2])
+                            pair_targets = qubits[: (len(qubits) // 2) * 2]
+                            if pair_targets:
+                                noisy.append("DEPOLARIZE2", pair_targets, [p2])
                     else:
                         p1 = self.gate_model._get_p_1q(op_index, ev.start_ns, inst)
                         if p1 > 0.0:

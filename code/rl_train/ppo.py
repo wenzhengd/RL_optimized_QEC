@@ -158,17 +158,22 @@ def _collect_rollout(env, model: ActorCritic, cfg: PPOConfig, obs: np.ndarray, d
         done: Latest done flag after rollout.
     """
     device = torch.device(cfg.device)
-    obs_buf = []
-    action_buf = []
-    logprob_buf = []
-    reward_buf = []
-    done_buf = []
-    value_buf = []
+    obs_buf = np.empty((cfg.rollout_steps, cfg.obs_dim), dtype=np.float32)
+    action_buf = np.empty((cfg.rollout_steps, cfg.theta_dim), dtype=np.float32)
+    logprob_buf = np.empty((cfg.rollout_steps,), dtype=np.float32)
+    reward_buf = np.empty((cfg.rollout_steps,), dtype=np.float32)
+    done_buf = np.empty((cfg.rollout_steps,), dtype=np.float32)
+    value_buf = np.empty((cfg.rollout_steps,), dtype=np.float32)
 
-    for _ in range(cfg.rollout_steps):
+    use_cpu_fastpath = device.type == "cpu"
+    for t in range(cfg.rollout_steps):
         # Forward pass for action sampling and baseline value.
-        obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-        with torch.no_grad():
+        obs_arr = np.asarray(obs, dtype=np.float32).reshape(-1)
+        obs_buf[t] = obs_arr
+        obs_t = torch.from_numpy(obs_arr).unsqueeze(0)
+        if not use_cpu_fastpath:
+            obs_t = obs_t.to(device=device)
+        with torch.inference_mode():
             action_t, logprob_t, value_t = model.get_action_and_value(obs_t)
 
         # Environment interaction always happens in NumPy space.
@@ -176,12 +181,11 @@ def _collect_rollout(env, model: ActorCritic, cfg: PPOConfig, obs: np.ndarray, d
         next_obs, reward, step_done, _ = env.step(action_np)
 
         # Store transition fields for PPO update later.
-        obs_buf.append(obs.copy())
-        action_buf.append(action_np.copy())
-        logprob_buf.append(float(logprob_t.item()))
-        reward_buf.append(float(reward))
-        done_buf.append(float(step_done))
-        value_buf.append(float(value_t.item()))
+        action_buf[t] = np.asarray(action_np, dtype=np.float32).reshape(-1)
+        logprob_buf[t] = float(logprob_t.item())
+        reward_buf[t] = float(reward)
+        done_buf[t] = float(step_done)
+        value_buf[t] = float(value_t.item())
 
         obs = next_obs
         done = bool(step_done)
@@ -191,13 +195,16 @@ def _collect_rollout(env, model: ActorCritic, cfg: PPOConfig, obs: np.ndarray, d
             done = False
 
     # Bootstrap value for final state of rollout when computing GAE.
-    obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-    with torch.no_grad():
+    obs_arr = np.asarray(obs, dtype=np.float32).reshape(-1)
+    obs_t = torch.from_numpy(obs_arr).unsqueeze(0)
+    if not use_cpu_fastpath:
+        obs_t = obs_t.to(device=device)
+    with torch.inference_mode():
         last_value = float(model.get_value(obs_t).item())
 
-    rewards = np.asarray(reward_buf, dtype=np.float32)
-    dones = np.asarray(done_buf, dtype=np.float32)
-    values = np.asarray(value_buf, dtype=np.float32)
+    rewards = reward_buf
+    dones = done_buf
+    values = value_buf
 
     # Generalized Advantage Estimation (GAE-Lambda), computed backward in time.
     advantages = np.zeros_like(rewards, dtype=np.float32)
@@ -217,14 +224,14 @@ def _collect_rollout(env, model: ActorCritic, cfg: PPOConfig, obs: np.ndarray, d
 
     # Convert rollout arrays into torch tensors once for update efficiency.
     rollout = Rollout(
-        obs=torch.tensor(np.asarray(obs_buf, dtype=np.float32), dtype=torch.float32, device=device),
-        actions=torch.tensor(np.asarray(action_buf, dtype=np.float32), dtype=torch.float32, device=device),
-        log_probs=torch.tensor(np.asarray(logprob_buf, dtype=np.float32), dtype=torch.float32, device=device),
-        rewards=torch.tensor(rewards, dtype=torch.float32, device=device),
-        dones=torch.tensor(dones, dtype=torch.float32, device=device),
-        values=torch.tensor(values, dtype=torch.float32, device=device),
-        returns=torch.tensor(returns, dtype=torch.float32, device=device),
-        advantages=torch.tensor(advantages, dtype=torch.float32, device=device),
+        obs=torch.as_tensor(obs_buf, dtype=torch.float32, device=device),
+        actions=torch.as_tensor(action_buf, dtype=torch.float32, device=device),
+        log_probs=torch.as_tensor(logprob_buf, dtype=torch.float32, device=device),
+        rewards=torch.as_tensor(rewards, dtype=torch.float32, device=device),
+        dones=torch.as_tensor(dones, dtype=torch.float32, device=device),
+        values=torch.as_tensor(values, dtype=torch.float32, device=device),
+        returns=torch.as_tensor(returns, dtype=torch.float32, device=device),
+        advantages=torch.as_tensor(advantages, dtype=torch.float32, device=device),
     )
     return rollout, obs, done
 
@@ -251,7 +258,52 @@ def _ppo_update(model: ActorCritic, optimizer: optim.Optimizer, rollout: Rollout
     last_entropy = 0.0
     last_total_loss = 0.0
 
+    full_batch = mb >= n
     for _ in range(cfg.update_epochs):
+        if full_batch:
+            obs_mb = rollout.obs
+            action_mb = rollout.actions
+            old_logp_mb = rollout.log_probs
+            value_old_mb = rollout.values
+            returns_mb = rollout.returns
+            adv = advantages
+
+            # Evaluate rollout actions under current policy parameters.
+            new_log_prob, entropy, new_value = model.evaluate_actions(obs_mb, action_mb)
+
+            # Importance-sampling ratio pi_new(a|s) / pi_old(a|s).
+            log_ratio = new_log_prob - old_logp_mb
+            ratio = torch.exp(log_ratio)
+
+            # PPO clipped surrogate objective.
+            pg_loss_1 = ratio * adv
+            pg_loss_2 = torch.clamp(ratio, 1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps) * adv
+            policy_loss = -torch.min(pg_loss_1, pg_loss_2).mean()
+
+            # Value clipping mirrors common PPO implementations and stabilizes critic.
+            value_pred = new_value
+            value_old = value_old_mb
+            value_clipped = value_old + (value_pred - value_old).clamp(-cfg.clip_eps, cfg.clip_eps)
+            value_loss_unclipped = (value_pred - returns_mb) ** 2
+            value_loss_clipped = (value_clipped - returns_mb) ** 2
+            value_loss = 0.5 * torch.max(value_loss_unclipped, value_loss_clipped).mean()
+
+            # Entropy term encourages broader action distribution early in training.
+            entropy_loss = entropy.mean()
+            total_loss = policy_loss + cfg.vf_coef * value_loss - cfg.ent_coef * entropy_loss
+
+            # Standard optimization step with gradient norm clipping.
+            optimizer.zero_grad(set_to_none=True)
+            total_loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+            optimizer.step()
+
+            last_policy_loss = float(policy_loss.item())
+            last_value_loss = float(value_loss.item())
+            last_entropy = float(entropy_loss.item())
+            last_total_loss = float(total_loss.item())
+            continue
+
         # Shuffle full rollout each epoch to randomize minibatches.
         idx = torch.randperm(n, device=rollout.obs.device)
         for start in range(0, n, mb):

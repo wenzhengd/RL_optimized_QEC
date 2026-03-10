@@ -518,3 +518,122 @@ Interpretation:
   stochasticity at this budget.
 - Next step is stage9 under the same settings to test whether the curve
   continues improving or enters a clearer plateau region.
+
+## Update (2026-03-09): Quick Old/New Backend Comparison (Composed Correlated)
+
+Result files:
+
+- `code/data_generated/backend_ab_quick_20260309/ab_quick_old.json`
+- `code/data_generated/backend_ab_quick_20260309/ab_quick_new.json`
+
+Protocol (same args except backend switch):
+
+- Command family: `rl_train.benchmarks.eval_steane_ppo`
+- Noise: `composed_google_gate_specific_correlated`
+- Correlated params: `f=1000`, `g=1.6`, `g_mode=per_circuit`
+- Seed: `140`
+- Tiny workload for fast turnaround:
+  - `total_timesteps=32`, `rollout_steps=8`, `trace_finetune_timesteps=0`
+  - `steane_n_rounds=4`, `steane_shots_per_step=3`
+  - `post_eval_episodes=2`, `eval_steane_shots_per_step=8`
+  - `steane_shot_workers=3`
+- Backend toggle:
+  - old: `STEANE_DISABLE_STREAMING_NOISE=1`
+  - new: `STEANE_DISABLE_STREAMING_NOISE=0`
+
+### Quick A/B outcome
+
+| Backend | Wall-clock | learned success | improve(LER~) vs fixed |
+|---|---:|---:|---:|
+| old | `95 s` | `93.75%` | `+50.00%` |
+| new | `85 s` | `100.00%` | `+100.00%` |
+
+Interpretation:
+
+- This quick run is **not a valid speed judgment** for backend architecture,
+  because PPO/training overhead dominates wall-clock at this tiny budget.
+- Use the simulator-kernel benchmark below for architecture speed conclusion.
+
+## Update (2026-03-09): Valid Kernel A/B (Old vs New Streaming Backend)
+
+Benchmark script:
+
+- `/tmp/bench_streaming_ab_guarded.py`
+
+Same workload and channels, only backend switch changed:
+
+- old: `STEANE_DISABLE_STREAMING_NOISE=1`
+- new: `STEANE_DISABLE_STREAMING_NOISE=0`
+
+Measured wall-clock:
+
+| Channel | old | new | speedup |
+|---|---:|---:|---:|
+| `google_gate_specific` | `0.284 s` | `0.311 s` | `0.91x` |
+| `correlated_pauli_noise_channel` | `4.759 s` | `0.437 s` | `10.89x` |
+| `composed_google_gate_specific_correlated` | `10.670 s` | `0.597 s` | `17.87x` |
+
+Conclusion:
+
+- For the target bottleneck channels (`correlated`, `composite`), new structure
+  is **obviously faster** (about `11x` to `18x`) on kernel-dominated workload.
+
+## Update (2026-03-09): Staged Composite Re-run (New Backend Only)
+
+Compared artifacts:
+
+- old metrics artifact:
+  `code/data_generated/steane_stage89_backend_pilot_old/stage8_scale_x3_backend_pilot/seed_140.json`
+- new rerun artifact:
+  `code/data_generated/composite_backend_compare_20260309/stage8_seed140_new_backend.json`
+- comparison dump:
+  `code/data_generated/composite_backend_compare_20260309/stage8_seed140_old_new_compare.json`
+
+Runtime:
+
+- new backend measured wall-clock: `890 s` (`14m50s`)
+- old backend exact wall-clock for this artifact is **not recorded** in the old
+  files (no wall-clock field/log in that stage89 old folder).
+
+Metric snapshot (seed 140):
+
+- learned success: old `0.92969` vs new `0.92578`
+- learned LER~: old `0.07031` vs new `0.07422`
+- improve(LER~) vs fixed-zero: old `+25.00%` vs new `+47.22%`
+
+## Update (2026-03-10): Confirm10 vs Confirm40 Confidence-Interval Clarification
+
+Compared artifacts:
+
+- phase5 confirm10 summary:
+  `code/data_generated/benchmarks/composed_corr_fg/phase5_20260309_confirm10/composed_fg_grid_summary.csv`
+- phase6 confirm40 summary:
+  `code/data_generated/benchmarks/composed_corr_fg/phase6_20260310_confirm40/composed_fg_grid_summary.csv`
+- prior ablation plot (error bars are std):
+  `code/data_generated/benchmarks/composed_corr_fg/phase6_20260310_confirm40/topcond_ablation_fast_vs_trace.png`
+- new CI plot (error bars are 95% CI half-width):
+  `code/data_generated/benchmarks/composed_corr_fg/plots_20260310/topcond_confirm10_vs_40_ci95.png`
+
+Method note:
+
+- In `topcond_ablation_fast_vs_trace.png`, error bars use `std`, not CI.
+- 95% CI half-width is computed as:
+  `CI95_half = 1.96 * std / sqrt(n_seeds)`.
+
+### Summary (`improve(LER~)`, mean +- CI95 half-width)
+
+| Run | Fast eval | Trace eval |
+|---|---:|---:|
+| confirm10 baseline | `31.90% +- 5.02%` | `36.81% +- 3.88%` |
+| confirm10 long-trace | `45.01% +- 7.23%` | `48.23% +- 7.01%` |
+| confirm40 baseline | `32.49% +- 3.91%` | `32.74% +- 4.00%` |
+| confirm40 long-trace | `43.43% +- 3.01%` | `44.22% +- 3.94%` |
+
+Interpretation:
+
+- Increasing seeds from 10 to 40 tightened uncertainty (narrower CI), especially
+  for long-trace fast eval (`+-7.23%` -> `+-3.01%`).
+- Mean effect did not become larger simply due to more seeds; it became more
+  statistically stable.
+- Long-trace remains above baseline in both fast and trace evaluation channels
+  under the larger-seed confirm run.

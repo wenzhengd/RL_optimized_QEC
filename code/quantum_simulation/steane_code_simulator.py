@@ -36,22 +36,34 @@ from __future__ import annotations
 
 import pickle
 import argparse
+from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from functools import lru_cache
 import logging
+import os
 from pathlib import Path
 import sys
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 import stim
 try:
-    from noise_engine import NoiseModel
+    from noise_engine import (
+        ComposedGateAndCorrelatedIdleNoiseModel,
+        HiddenMarkovCorrelatedPauliNoiseModel,
+        NoiseModel,
+    )
 except ModuleNotFoundError:
     # Package import path, e.g. `from quantum_simulation.steane_code_simulator import ...`
-    from quantum_simulation.noise_engine import NoiseModel
+    from quantum_simulation.noise_engine import (
+        ComposedGateAndCorrelatedIdleNoiseModel,
+        HiddenMarkovCorrelatedPauliNoiseModel,
+        NoiseModel,
+    )
 
 
 LOGGER = logging.getLogger(__name__)
+_ENABLE_STREAMING_NOISE = os.environ.get("STEANE_DISABLE_STREAMING_NOISE", "0") != "1"
 
 # Steane plaquettes in 0-based physical indexing.
 PLAQUETTES = [
@@ -129,6 +141,156 @@ def _parallel_noise_for_shot(noise: NoiseModel, shot_index: int) -> NoiseModel:
     return fork_fn(int(shot_index))
 
 
+@dataclass(frozen=True)
+class _StreamEventPlan:
+    ideal_instruction: stim.CircuitInstruction
+    gate_noise_instructions: tuple[stim.CircuitInstruction, ...]
+    add_idle_window: bool
+
+
+@dataclass(frozen=True)
+class _StreamCircuitPlan:
+    events: tuple[_StreamEventPlan, ...]
+    num_qubits: int
+
+
+def _extract_qubit_targets_local(instruction: stim.CircuitInstruction) -> list[int]:
+    qubits: list[int] = []
+    for target in instruction.targets_copy():
+        if hasattr(target, "value"):
+            try:
+                qubits.append(int(target.value))
+                continue
+            except Exception:
+                pass
+        try:
+            qubits.append(int(target))
+        except Exception:
+            continue
+    return qubits
+
+
+def _make_single_instruction(
+    name: str,
+    targets: Sequence[int],
+    gate_args: Sequence[float] = (),
+) -> stim.CircuitInstruction:
+    # Construct instruction directly to avoid per-call temporary Circuit+append overhead.
+    return stim.CircuitInstruction(
+        str(name),
+        [int(t) for t in targets],
+        [float(x) for x in gate_args],
+    )
+
+
+def _compile_stream_circuit_plan(
+    noise: NoiseModel,
+    circuit: stim.Circuit,
+) -> Optional[_StreamCircuitPlan]:
+    gate_model: Any = None
+    idle_model: Any = None
+    if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel):
+        idle_model = noise
+        timeline_builder = noise.timeline_builder
+    elif isinstance(noise, ComposedGateAndCorrelatedIdleNoiseModel):
+        gate_model = noise.gate_model
+        idle_model = noise.idle_model
+        timeline_builder = noise.timeline_builder
+    else:
+        return None
+
+    if not hasattr(idle_model, "apply_idle_window_to_simulator"):
+        return None
+    events = timeline_builder.build_events(circuit)
+    if not events:
+        return _StreamCircuitPlan(events=tuple(), num_qubits=int(circuit.num_qubits))
+
+    out_events: list[_StreamEventPlan] = []
+    idle_enabled = bool(getattr(idle_model, "enabled", True))
+    for op_index, ev in enumerate(events):
+        inst = ev.instruction
+        gate_noise_instructions: list[stim.CircuitInstruction] = []
+
+        if gate_model is not None and bool(getattr(gate_model, "enabled", True)):
+            name = inst.name
+            if gate_model._allow_noise_on_instruction(name):
+                qubits = _extract_qubit_targets_local(inst)
+                if qubits:
+                    if name in gate_model._TWO_QUBIT_GATES:
+                        p2 = float(gate_model._get_p_2q(op_index, ev.start_ns, inst))
+                        if p2 > 0.0:
+                            pair_targets = qubits[: (len(qubits) // 2) * 2]
+                            if pair_targets:
+                                gate_noise_instructions.append(
+                                    _make_single_instruction("DEPOLARIZE2", pair_targets, [p2])
+                                )
+                    else:
+                        p1 = float(gate_model._get_p_1q(op_index, ev.start_ns, inst))
+                        if p1 > 0.0:
+                            gate_noise_instructions.append(
+                                _make_single_instruction("DEPOLARIZE1", qubits, [p1])
+                            )
+
+        out_events.append(
+            _StreamEventPlan(
+                ideal_instruction=inst,
+                gate_noise_instructions=tuple(gate_noise_instructions),
+                add_idle_window=(op_index < len(events) - 1 and idle_enabled),
+            )
+        )
+
+    return _StreamCircuitPlan(events=tuple(out_events), num_qubits=int(circuit.num_qubits))
+
+
+def _sim_do_with_noise(
+    simulator: stim.TableauSimulator,
+    noise: NoiseModel,
+    circuit: stim.Circuit,
+    stream_plan_cache: Optional[dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]]] = None,
+) -> None:
+    if _ENABLE_STREAMING_NOISE and stream_plan_cache is not None:
+        if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel):
+            noise_key = 1
+        elif isinstance(noise, ComposedGateAndCorrelatedIdleNoiseModel):
+            noise_key = int(id(noise.gate_model))
+        else:
+            noise_key = int(id(noise))
+        cache_key = (int(id(circuit)), int(noise_key))
+        cached = stream_plan_cache.get(cache_key)
+        plan = None
+        if cached is not None and cached[0] is circuit:
+            plan = cached[1]
+        else:
+            compiled = _compile_stream_circuit_plan(noise=noise, circuit=circuit)
+            if compiled is not None:
+                stream_plan_cache[cache_key] = (circuit, compiled)
+                plan = compiled
+
+        if plan is not None:
+            idle_model = noise if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel) else getattr(
+                noise,
+                "idle_model",
+                None,
+            )
+            if idle_model is None:
+                simulator.do(noise.apply(circuit))
+                return
+            apply_idle_window = getattr(idle_model, "apply_idle_window_to_simulator", None)
+            if not callable(apply_idle_window):
+                simulator.do(noise.apply(circuit))
+                return
+
+            for event in plan.events:
+                simulator.do(event.ideal_instruction)
+                for noise_inst in event.gate_noise_instructions:
+                    simulator.do(noise_inst)
+                if event.add_idle_window:
+                    apply_idle_window(simulator, int(plan.num_qubits))
+            return
+
+    simulator.do(noise.apply(circuit))
+
+
 def _run_shot_batch(
     shot_indices: Sequence[int],
     initial_state: str,
@@ -144,6 +306,7 @@ def _run_shot_batch(
 ) -> list[tuple[int, int]]:
     """Run one batch of shots, returning `(shot_idx, success)` pairs."""
     out: list[tuple[int, int]] = []
+    stream_plan_cache: dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]] = {}
     for shot_idx in shot_indices:
         shot_noise = _parallel_noise_for_shot(noise, int(shot_idx))
         success, _ = _run_single_shot_sequential(
@@ -158,6 +321,7 @@ def _run_shot_batch(
             stabilizer_circuit_tpls=stabilizer_circuit_tpls,
             rotate_circuit_tpl=rotate_circuit_tpl,
             logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
+            stream_plan_cache=stream_plan_cache,
         )
         out.append((int(shot_idx), int(success)))
     return out
@@ -478,6 +642,7 @@ def destructive_logical_measurement(
     m_idx: int,
     noise: NoiseModel,
     logical_measurement_circuit: Optional[stim.Circuit] = None,
+    stream_plan_cache: Optional[dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]]] = None,
 ) -> tuple[int, int]:
     """
     执行最终破坏性测量并输出逻辑测量 bit。
@@ -502,7 +667,12 @@ def destructive_logical_measurement(
     """
     if logical_measurement_circuit is None:
         logical_measurement_circuit = measure_logical_qubits()
-    simulator.do(noise.apply(logical_measurement_circuit))
+    _sim_do_with_noise(
+        simulator=simulator,
+        noise=noise,
+        circuit=logical_measurement_circuit,
+        stream_plan_cache=stream_plan_cache,
+    )
     r = simulator.current_measurement_record()[m_idx : m_idx + 7]
     m_idx += 7
 
@@ -550,6 +720,7 @@ def _run_single_shot_sequential(
     stabilizer_circuit_tpls: Optional[Sequence[stim.Circuit]] = None,
     rotate_circuit_tpl: Optional[stim.Circuit] = None,
     logical_measurement_circuit_tpl: Optional[stim.Circuit] = None,
+    stream_plan_cache: Optional[dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]]] = None,
 ) -> tuple[int, Optional[dict[str, Any]]]:
     """运行一个 shot，并可选保存中间轨迹。"""
     if hasattr(noise, "start_shot") and callable(getattr(noise, "start_shot")):
@@ -577,7 +748,12 @@ def _run_single_shot_sequential(
 
     prep_ok = False
     for _attempt in range(3):
-        simulator.do(noise.apply(encoding_circuit_tpl))
+        _sim_do_with_noise(
+            simulator=simulator,
+            noise=noise,
+            circuit=encoding_circuit_tpl,
+            stream_plan_cache=stream_plan_cache,
+        )
         state_prep_ancilla = int(simulator.current_measurement_record()[m_idx])
         m_idx += 1
         prep_ancilla_measurements.append(state_prep_ancilla)
@@ -602,7 +778,12 @@ def _run_single_shot_sequential(
             return 0, trace
         return 0, None
 
-    simulator.do(noise.apply(prep_circuit_tpl))
+    _sim_do_with_noise(
+        simulator=simulator,
+        noise=noise,
+        circuit=prep_circuit_tpl,
+        stream_plan_cache=stream_plan_cache,
+    )
 
     histories: dict[str, list[int]] = {s["name"]: [] for s in STABILIZER_SEQUENCE}
     tracked_x_syndromes = np.zeros(3, dtype=int)
@@ -612,7 +793,12 @@ def _run_single_shot_sequential(
     for step in range(n_steps):
         stab_idx = step % 6
         stab = STABILIZER_SEQUENCE[stab_idx]
-        simulator.do(noise.apply(stabilizer_circuit_tpls[stab_idx]))
+        _sim_do_with_noise(
+            simulator=simulator,
+            noise=noise,
+            circuit=stabilizer_circuit_tpls[stab_idx],
+            stream_plan_cache=stream_plan_cache,
+        )
         meas = int(simulator.current_measurement_record()[m_idx])
         m_idx += 1
         histories[stab["name"]].append(meas)
@@ -683,7 +869,12 @@ def _run_single_shot_sequential(
                 }
             )
 
-    simulator.do(noise.apply(rotate_circuit_tpl))
+    _sim_do_with_noise(
+        simulator=simulator,
+        noise=noise,
+        circuit=rotate_circuit_tpl,
+        stream_plan_cache=stream_plan_cache,
+    )
     final_measurement, m_idx = destructive_logical_measurement(
         simulator=simulator,
         meas_basis=meas_basis,
@@ -693,6 +884,7 @@ def _run_single_shot_sequential(
         m_idx=m_idx,
         noise=noise,
         logical_measurement_circuit=logical_measurement_circuit_tpl,
+        stream_plan_cache=stream_plan_cache,
     )
 
     success = int(expected_result(final_measurement, initial_state, meas_basis))
@@ -713,6 +905,21 @@ def _run_single_shot_sequential(
         "success": success,
     }
     return success, trace
+
+
+@lru_cache(maxsize=32)
+def _cached_shot_templates(
+    initial_state: str,
+    meas_basis: str,
+) -> tuple[stim.Circuit, stim.Circuit, tuple[stim.Circuit, ...], stim.Circuit, stim.Circuit]:
+    """Build immutable circuit templates once per (initial_state, meas_basis)."""
+    return (
+        encoding_circuit(),
+        prepare_stab_eigenstate(initial_state),
+        tuple(measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE),
+        rotate_to_measurement_basis(meas_basis),
+        measure_logical_qubits(),
+    )
 
 
 def steane_code_exp_sequential(
@@ -749,14 +956,14 @@ def steane_code_exp_sequential(
     if n_steps < 1:
         raise ValueError("n_steps must be >= 1")
 
-    # Build immutable circuit templates once and reuse across all shots.
-    encoding_circuit_tpl = encoding_circuit()
-    prep_circuit_tpl = prepare_stab_eigenstate(initial_state)
-    stabilizer_circuit_tpls = tuple(
-        measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE
-    )
-    rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
-    logical_measurement_circuit_tpl = measure_logical_qubits()
+    # Build immutable templates once per basis/state pair and reuse across runs.
+    (
+        encoding_circuit_tpl,
+        prep_circuit_tpl,
+        stabilizer_circuit_tpls,
+        rotate_circuit_tpl,
+        logical_measurement_circuit_tpl,
+    ) = _cached_shot_templates(str(initial_state), str(meas_basis))
 
     requested_workers = int(shot_workers)
     if requested_workers > 1 and bool(getattr(noise, "stateful", False)):
@@ -774,6 +981,7 @@ def steane_code_exp_sequential(
     # Fast single-thread path keeps overhead minimal for tiny shot counts.
     if int(requested_workers) <= 1 or int(shots) <= 1:
         results: list[int] = []
+        stream_plan_cache: dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]] = {}
         for _ in range(shots):
             success, _ = _run_single_shot_sequential(
                 initial_state=initial_state,
@@ -787,6 +995,7 @@ def steane_code_exp_sequential(
                 stabilizer_circuit_tpls=stabilizer_circuit_tpls,
                 rotate_circuit_tpl=rotate_circuit_tpl,
                 logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
+                stream_plan_cache=stream_plan_cache,
             )
             results.append(int(success))
         return results
@@ -863,6 +1072,7 @@ def steane_code_exp_sequential(
                 stabilizer_circuit_tpls,
                 rotate_circuit_tpl,
                 logical_measurement_circuit_tpl,
+                None,
             )
             for _ in shot_ids
         ]
@@ -887,13 +1097,13 @@ def steane_code_exp_sequential_with_trace(
         raise ValueError("n_steps must be >= 1")
 
     # Build immutable circuit templates once and reuse across all shots.
-    encoding_circuit_tpl = encoding_circuit()
-    prep_circuit_tpl = prepare_stab_eigenstate(initial_state)
-    stabilizer_circuit_tpls = tuple(
-        measure_single_stabilizer(stab, ancilla=8) for stab in STABILIZER_SEQUENCE
-    )
-    rotate_circuit_tpl = rotate_to_measurement_basis(meas_basis)
-    logical_measurement_circuit_tpl = measure_logical_qubits()
+    (
+        encoding_circuit_tpl,
+        prep_circuit_tpl,
+        stabilizer_circuit_tpls,
+        rotate_circuit_tpl,
+        logical_measurement_circuit_tpl,
+    ) = _cached_shot_templates(str(initial_state), str(meas_basis))
 
     # Keep trace mode single-threaded for determinism and easier debugging.
     # Parallel trace collection is possible but tends to complicate ordering and
@@ -901,6 +1111,7 @@ def steane_code_exp_sequential_with_trace(
     _ = shot_workers
     results: list[int] = []
     traces: list[dict[str, Any]] = []
+    stream_plan_cache: dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]] = {}
     for shot_index in range(shots):
         success, trace = _run_single_shot_sequential(
             initial_state=initial_state,
@@ -914,6 +1125,7 @@ def steane_code_exp_sequential_with_trace(
             stabilizer_circuit_tpls=stabilizer_circuit_tpls,
             rotate_circuit_tpl=rotate_circuit_tpl,
             logical_measurement_circuit_tpl=logical_measurement_circuit_tpl,
+            stream_plan_cache=stream_plan_cache,
         )
         results.append(int(success))
         trace = trace if trace is not None else {}

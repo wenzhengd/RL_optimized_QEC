@@ -255,10 +255,13 @@ def _evaluate_policies(
     action_mapper = lambda x: clipped_identity_action_mapper(x, action_limit=action_limit)
     rng = np.random.default_rng(int(cfg.seed) + 2026)
     device = torch.device(cfg.device)
+    use_cpu_fastpath = device.type == "cpu"
 
     def learned_policy(obs: np.ndarray) -> np.ndarray:
-        obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-        with torch.no_grad():
+        obs_t = torch.from_numpy(np.asarray(obs, dtype=np.float32).reshape(-1)).unsqueeze(0)
+        if not use_cpu_fastpath:
+            obs_t = obs_t.to(device=device)
+        with torch.inference_mode():
             theta = model.actor(obs_t).squeeze(0).cpu().numpy()
         return theta.astype(np.float32)
 

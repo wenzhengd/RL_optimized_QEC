@@ -1,0 +1,144 @@
+\documentclass[tikz,border=6pt]{standalone}
+\usepackage{amsmath}
+\usepackage{iftex}
+\ifLuaTeX
+  \usepackage{emoji}
+  \newcommand{\gear}{\raisebox{0.2ex}{\emoji{gear}}}
+\else
+  % Fallback when LuaTeX emoji rendering is unavailable.
+  \newcommand{\gear}{\raisebox{0.2ex}{\scriptsize$\circ$}}
+\fi
+\usetikzlibrary{arrows.meta,positioning,decorations.pathreplacing,calc}
+\definecolor{UStroke}{HTML}{0F7284}
+\definecolor{UFill}{HTML}{7FD6E2}
+\definecolor{NStroke}{HTML}{8F2D2D}
+\definecolor{NFill}{HTML}{E8A3A3}
+\definecolor{GStroke}{HTML}{4D2C91}
+\definecolor{GFill}{HTML}{BFA8E8}
+
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  >=Latex,
+  font=\small,
+  wire/.style={line width=1.4pt,draw=black},
+  ublock/.style={draw=UStroke,fill=UFill,line width=0.9pt,rounded corners=2pt,minimum width=0.75cm,minimum height=1.35cm,inner sep=0pt},
+  gblock/.style={draw=GStroke,fill=GFill,line width=0.9pt,rounded corners=2pt,minimum width=0.75cm,minimum height=1.35cm,inner sep=0pt},
+  ncorr/.style={draw=NStroke,fill=NFill,line width=0.9pt,line join=round}
+]
+
+% ---------------- Row 1: noiseless ----------------
+\draw[wire] (0,3.2) -- (12.2,3.2);
+\node[ublock] (u11) at (1.2,3.2) {$U_1$};
+\node[ublock] (u12) at (5.0,3.2) {$U_2$};
+\node[ublock] (u13) at (8.8,3.2) {$U_3$};
+\node at (11.5,3.2) {$\cdots$};
+\node[align=left] at (8.4,4.35) {noiseless: $\rho_{j+1}=U_j(\rho_j)$};
+
+% ---------------- Row 2: noisy ----------------
+\draw[wire] (0,0.0) -- (12.2,0.0);
+\node[ublock] (u21) at (1.2,0.0) {$U_1$};
+\coordinate (n21) at (3.1,0.0);
+\node[ublock] (u22) at (5.0,0.0) {$U_2$};
+\coordinate (n22) at (6.9,0.0);
+\node[ublock] (u23) at (8.8,0.0) {$U_3$};
+\coordinate (n23) at (10.7,0.0);
+\node at (11.9,0.0) {$\cdots$};
+\node[align=left] at (8.25,1.25) {error model: $\rho_{j+1}=\mathcal N_j\!\left(U_j(\rho_j)\right)$};
+% Row-2 N + correlation ribbon as ONE geometric entity (single fill+boundary).
+\path[ncorr]
+([xshift=-0.375cm,yshift=-0.675cm]n21) --
+([xshift=-0.375cm,yshift=0.675cm]n21) --
+([xshift=-0.130cm,yshift=0.675cm]n21) --
+([xshift=-0.130cm,yshift=0.800cm]n21) --
+([xshift=-0.420cm,yshift=0.800cm]n21) --
+([xshift=-0.420cm,yshift=1.050cm]n21) --
+([xshift=0.420cm,yshift=1.050cm]n23) --
+([xshift=0.420cm,yshift=0.800cm]n23) --
+([xshift=0.130cm,yshift=0.800cm]n23) --
+([xshift=0.130cm,yshift=0.675cm]n23) --
+([xshift=0.375cm,yshift=0.675cm]n23) --
+([xshift=0.375cm,yshift=-0.675cm]n23) --
+([xshift=-0.375cm,yshift=-0.675cm]n23) --
+([xshift=-0.375cm,yshift=0.675cm]n23) --
+([xshift=-0.130cm,yshift=0.675cm]n23) --
+([xshift=-0.130cm,yshift=0.800cm]n23) --
+([xshift=0.130cm,yshift=0.800cm]n22) --
+([xshift=0.130cm,yshift=0.675cm]n22) --
+([xshift=0.375cm,yshift=0.675cm]n22) --
+([xshift=0.375cm,yshift=-0.675cm]n22) --
+([xshift=-0.375cm,yshift=-0.675cm]n22) --
+([xshift=-0.375cm,yshift=0.675cm]n22) --
+([xshift=-0.130cm,yshift=0.675cm]n22) --
+([xshift=-0.130cm,yshift=0.800cm]n22) --
+([xshift=0.130cm,yshift=0.800cm]n21) --
+([xshift=0.130cm,yshift=0.675cm]n21) --
+([xshift=0.375cm,yshift=0.675cm]n21) --
+([xshift=0.375cm,yshift=-0.675cm]n21) -- cycle;
+\node at (n21) {$\mathcal N_1$};
+\node at (n22) {$\mathcal N_2$};
+\node at (n23) {$\mathcal N_3$};
+
+% ---------------- Row 3: RL-optimized ----------------
+\draw[wire] (0,-3.4) -- (12.2,-3.4);
+\node[ublock] (u31) at (1.2,-3.4) {$U_1$};
+\node[gblock] (g31) at (2.15,-3.4) {};
+\node at ($(g31.center)+(0,0.20)$) {$\mathcal G_1$};
+\node at ($(g31.center)+(0,-0.23)$) {\gear};
+\coordinate (n31) at (3.1,-3.4);
+\node[ublock] (u32) at (5.0,-3.4) {$U_2$};
+\node[gblock] (g32) at (5.95,-3.4) {};
+\node at ($(g32.center)+(0,0.20)$) {$\mathcal G_2$};
+\node at ($(g32.center)+(0,-0.23)$) {\gear};
+\coordinate (n32) at (6.9,-3.4);
+\node[ublock] (u33) at (8.8,-3.4) {$U_3$};
+\node[gblock] (g33) at (9.75,-3.4) {};
+\node at ($(g33.center)+(0,0.20)$) {$\mathcal G_3$};
+\node at ($(g33.center)+(0,-0.23)$) {\gear};
+\coordinate (n33) at (10.7,-3.4);
+\node at (11.9,-3.4) {$\cdots$};
+
+\node[draw,rounded corners=2pt,fill=gray!12,minimum width=1.9cm,minimum height=0.75cm] (agent) at (5.25,-5.45) {RL agent};
+\draw[-{Latex[length=2.2mm]},draw=GStroke] (agent.north) to[bend left=18] (g31.south);
+\draw[-{Latex[length=2.2mm]},draw=GStroke] (agent.north) to[bend left=7]  (g32.south);
+\draw[-{Latex[length=2.2mm]},draw=GStroke] (agent.north) to[bend right=16] (g33.south);
+
+% Row-3 N + correlation ribbon as ONE geometric entity (single fill+boundary).
+\path[ncorr]
+([xshift=-0.375cm,yshift=-0.675cm]n31) --
+([xshift=-0.375cm,yshift=0.675cm]n31) --
+([xshift=-0.130cm,yshift=0.675cm]n31) --
+([xshift=-0.130cm,yshift=0.800cm]n31) --
+([xshift=-0.420cm,yshift=0.800cm]n31) --
+([xshift=-0.420cm,yshift=1.050cm]n31) --
+([xshift=0.420cm,yshift=1.050cm]n33) --
+([xshift=0.420cm,yshift=0.800cm]n33) --
+([xshift=0.130cm,yshift=0.800cm]n33) --
+([xshift=0.130cm,yshift=0.675cm]n33) --
+([xshift=0.375cm,yshift=0.675cm]n33) --
+([xshift=0.375cm,yshift=-0.675cm]n33) --
+([xshift=-0.375cm,yshift=-0.675cm]n33) --
+([xshift=-0.375cm,yshift=0.675cm]n33) --
+([xshift=-0.130cm,yshift=0.675cm]n33) --
+([xshift=-0.130cm,yshift=0.800cm]n33) --
+([xshift=0.130cm,yshift=0.800cm]n32) --
+([xshift=0.130cm,yshift=0.675cm]n32) --
+([xshift=0.375cm,yshift=0.675cm]n32) --
+([xshift=0.375cm,yshift=-0.675cm]n32) --
+([xshift=-0.375cm,yshift=-0.675cm]n32) --
+([xshift=-0.375cm,yshift=0.675cm]n32) --
+([xshift=-0.130cm,yshift=0.675cm]n32) --
+([xshift=-0.130cm,yshift=0.800cm]n32) --
+([xshift=0.130cm,yshift=0.800cm]n31) --
+([xshift=0.130cm,yshift=0.675cm]n31) --
+([xshift=0.375cm,yshift=0.675cm]n31) --
+([xshift=0.375cm,yshift=-0.675cm]n31) -- cycle;
+\node at (n31) {$\mathcal N_1$};
+\node at (n32) {$\mathcal N_2$};
+\node at (n33) {$\mathcal N_3$};
+\node[text=NStroke] at ($(n32.north)+(0,1.25)$) {correlated noise $\{\mathcal N_j\}_{j=1}^N$};
+
+\node[align=left] at (8.35,-5.4) {$\rho_{j+1}=\mathcal N_j\!\left(\mathcal G_j\!\left(U_j(\rho_j)\right)\right)$};
+
+\end{tikzpicture}
+\end{document}

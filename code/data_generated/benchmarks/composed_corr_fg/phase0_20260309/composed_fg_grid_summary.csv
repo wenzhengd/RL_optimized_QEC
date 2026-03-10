@@ -1,0 +1,3 @@
+stage_name,f_hz,g,n_seeds,improve_ler_mean,improve_ler_std,learned_success_mean,learned_success_std,fixed_success_mean,fixed_success_std,delta_success_mean,delta_success_std,positive_seed_ratio
+stage_composed_calib_f1e2_g16,100.0,1.6,2,0.21239837398373984,0.12906504065040653,0.9306640625,0.0166015625,0.9130859375,0.0068359375,0.017578125,0.009765625,1.0
+stage_composed_calib_f1e4_g04,10000.0,0.4,2,0.2524479804161567,0.08965728274173806,0.9404296875,0.0107421875,0.9208984375,0.0048828125,0.01953125,0.005859375,1.0

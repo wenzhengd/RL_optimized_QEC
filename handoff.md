@@ -61,3 +61,27 @@ env OMP_NUM_THREADS=1 PYTHONPATH=code /Users/wenzhengdong/opt/anaconda3/envs/phy
 ## Not Done Yet
 - Phase C intentionally skipped:
   - Re-enabling shot-level parallelism for stateful channels via per-worker noise instances.
+
+## Session Theme (2026-03-09)
+- Main theme:
+  - `noise_circuit_simulation` (especially correlated/composed channels) has been substantially accelerated.
+  - End-to-end RL remains slow, so total runtime improvement can look small in tiny RL benchmarks.
+
+- What was confirmed:
+  - Kernel-level old/new benchmark (same workload, backend switch only):
+    - `correlated_pauli_noise_channel`: `4.759s -> 0.437s` (~`10.89x`)
+    - `composed_google_gate_specific_correlated`: `10.670s -> 0.597s` (~`17.87x`)
+  - Quick RL benchmark showed only `95s -> 85s`:
+    - This is interpreted as RL/training/eval overhead dominating wall-clock at that budget,
+      not as a failure of simulator-kernel optimization.
+
+- Important backend switch:
+  - Legacy path: `STEANE_DISABLE_STREAMING_NOISE=1`
+  - New fast path (default): `STEANE_DISABLE_STREAMING_NOISE=0`
+
+- Next Codex session priority:
+  - Focus optimization on RL-side bottlenecks (outside noisy-circuit kernel), e.g.:
+    - PPO/train loop overhead
+    - eval frequency and policy-eval pipeline overhead
+    - process/thread orchestration and serialization overhead
+    - non-simulator Python hotspots in benchmark driver

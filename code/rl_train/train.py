@@ -184,8 +184,8 @@ def evaluate_steane_policy_fn(
     if episodes <= 0:
         raise ValueError("episodes must be > 0.")
 
-    det_rates = []
-    success_rates = []
+    det_rate_sum = 0.0
+    success_rate_sum = 0.0
     for _ in range(int(episodes)):
         obs0 = simulator.reset()
         theta = np.asarray(policy_fn(obs0), dtype=np.float32).reshape(-1)
@@ -196,21 +196,27 @@ def evaluate_steane_policy_fn(
         else:
             max_sim_steps = max(1, int(simulator.cfg.n_rounds))
 
-        episode_det = []
-        episode_success = []
+        episode_det_sum = 0.0
+        episode_success_sum = 0.0
+        episode_steps = 0
         for _step in range(max_sim_steps):
             transition = simulator.step(action)
             success = float(transition.info.get("success_rate", transition.next_obs[0]))
-            episode_success.append(success)
-            episode_det.append(_summarize_detector_rate(transition.info, fallback_success_rate=success))
+            episode_success_sum += success
+            episode_det_sum += _summarize_detector_rate(transition.info, fallback_success_rate=success)
+            episode_steps += 1
             if transition.done:
                 break
 
-        det_rates.append(float(np.mean(episode_det)) if episode_det else 1.0)
-        success_rates.append(float(np.mean(episode_success)) if episode_success else 0.0)
+        if episode_steps > 0:
+            det_rate_sum += episode_det_sum / float(episode_steps)
+            success_rate_sum += episode_success_sum / float(episode_steps)
+        else:
+            det_rate_sum += 1.0
+            success_rate_sum += 0.0
 
-    dr = float(np.mean(det_rates))
-    success = float(np.mean(success_rates))
+    dr = det_rate_sum / float(episodes)
+    success = success_rate_sum / float(episodes)
     ler = 1.0 - success
     return {"detector_rate": dr, "success_rate": success, "ler_proxy": ler}
 
