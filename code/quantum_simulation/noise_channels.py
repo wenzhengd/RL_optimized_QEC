@@ -19,6 +19,7 @@ try:
         GoogleLikeGateSpecificNoiseModel,
         HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
+        PreMeasurementBitFlipNoiseModel,
         TimeDependentPauliNoiseModel,
     )
 except ImportError:
@@ -30,6 +31,7 @@ except ImportError:
         GoogleLikeGateSpecificNoiseModel,
         HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
+        PreMeasurementBitFlipNoiseModel,
         TimeDependentPauliNoiseModel,
     )
 
@@ -275,6 +277,7 @@ def build_steane_rl_noise_model(
     channel_corr_windows_per_step: int,
     channel_regime_a: float,
     channel_regime_b: float,
+    measurement_bitflip_prob: float,
     enabled: bool = True,
 ) -> tuple[NoiseModel, float, float, str]:
     """Construct the noise model used by Steane RL adapter.
@@ -300,7 +303,14 @@ def build_steane_rl_noise_model(
             enabled=enabled,
         )
         p_1q, p_2q = noise.effective_error_rates(0.0)
-        return noise, float(p_1q), float(p_2q), resolved
+        out_noise: NoiseModel = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_1q), float(p_2q), resolved
 
     if resolved == "google_gate_specific":
         noise = GoogleLikeGateSpecificNoiseModel(
@@ -316,7 +326,14 @@ def build_steane_rl_noise_model(
             enabled=enabled,
         )
         p_1q, p_2q = noise.effective_error_rates(0.0)
-        return noise, float(p_1q), float(p_2q), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_1q), float(p_2q), resolved
 
     if resolved == "idle_depolarizing":
         total_idle = max(0.0, float(idle_p_total_per_idle))
@@ -327,7 +344,14 @@ def build_steane_rl_noise_model(
             enabled=enabled,
         )
         # Proxy rates for logging consistency in downstream code.
-        return noise, float(total_idle), float(total_idle), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(total_idle), float(total_idle), resolved
 
     if resolved == "parametric_google":
         # Same functional form as gate-specific Google-like channel, but driven by
@@ -345,7 +369,14 @@ def build_steane_rl_noise_model(
             enabled=enabled,
         )
         p_1q, p_2q = noise.effective_error_rates(0.0)
-        return noise, float(p_1q), float(p_2q), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_1q), float(p_2q), resolved
 
     if resolved == "correlated_pauli_noise_channel":
         noise, p_proxy = build_correlated_pauli_noise_channel(
@@ -362,7 +393,14 @@ def build_steane_rl_noise_model(
             enabled=enabled,
         )
         # This channel is idle-Pauli based; report one proxy scale for both slots.
-        return noise, float(p_proxy), float(p_proxy), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_proxy), float(p_proxy), resolved
 
     if resolved == "composed_google_global_correlated":
         gate_noise = GoogleLikeDepolarizingNoiseModel(
@@ -401,7 +439,14 @@ def build_steane_rl_noise_model(
                 if isinstance(v, (int, float)):
                     model_meta[f"idle_{k}"] = v
         noise.model_metadata = model_meta
-        return noise, float(p_1q), float(p_2q), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_1q), float(p_2q), resolved
 
     if resolved == "composed_google_gate_specific_correlated":
         gate_noise = GoogleLikeGateSpecificNoiseModel(
@@ -442,7 +487,14 @@ def build_steane_rl_noise_model(
                 if isinstance(v, (int, float)):
                     model_meta[f"idle_{k}"] = v
         noise.model_metadata = model_meta
-        return noise, float(p_1q), float(p_2q), resolved
+        out_noise = noise
+        if float(measurement_bitflip_prob) > 0.0:
+            out_noise = PreMeasurementBitFlipNoiseModel(
+                p_flip=float(measurement_bitflip_prob),
+                base_model=noise,
+                enabled=enabled,
+            )
+        return out_noise, float(p_1q), float(p_2q), resolved
 
     raise ValueError(
         f"Unknown noise_channel '{noise_channel}'. "

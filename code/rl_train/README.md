@@ -18,6 +18,7 @@ This folder is a minimal scaffold to build your own RL control task in the same 
 - `example_simulator.py`: runnable toy simulator.
 - `steane_adapter.py`: Steane-QEC adapter (`reset/step`) and Google-like drifted gate-noise bridge.
 - `train.py`: entry script with TODO hooks for your real simulator and reward.
+- `../quantum_simulation/noise_modeling.md`: noise-model semantics, parameter meanings, and composition rules.
 
 ## Install
 
@@ -235,6 +236,9 @@ In `train.py`, replace:
 
 ## Steane Adapter Notes
 
+For the full noise-model semantics and terminology, see
+[code/quantum_simulation/noise_modeling.md](../quantum_simulation/noise_modeling.md).
+
 - File: `steane_adapter.py`
 - Adapter exposes `reset()/step()` so it can be used by `ExternalSimulatorEnv`.
 - Default Steane PPO setup in `train.py` is paper-inspired:
@@ -260,9 +264,23 @@ In `train.py`, replace:
   - `--steane-noise-channel composed_google_gate_specific_correlated` /
     `composed_google_global_correlated`: one-pass composed model that injects
     Google-like gate depolarizing noise and correlated idle Pauli noise together.
+  - terminology:
+    - `noise_channel` selects the base gate/idle channel family.
+    - `--steane-measurement-bitflip-prob` is an overlay on top of the base family,
+      not a separate `noise_channel` key.
+    - therefore `composed_google_*_correlated + measurement_bitflip_prob>0`
+      is effectively a "full composite" model:
+      Google-like gate noise + correlated idle noise + measurement flips.
   - idle channel parameters:
     `--steane-idle-p-total-per-idle`, `--steane-idle-px-weight`, `--steane-idle-py-weight`,
     `--steane-idle-pz-weight`.
+  - measurement error overlay:
+    `--steane-measurement-bitflip-prob`.
+    This applies a symmetric pre-measurement `X` flip before each `M` gate,
+    modeling Z-basis readout error as a phenomenological bit-flip channel.
+    In the current Steane simulator, all actual Stim measurement instructions are
+    `M`-family Z-basis measurements, including cases where the logical basis is
+    changed first by a rotation circuit and then measured with `M`.
   - correlated channel parameters:
     `--steane-channel-corr-f` (Hz, lower means slower drift / longer memory),
     `--steane-channel-corr-g` (overall channel-strength scale),
@@ -284,6 +302,36 @@ python -m rl_train.benchmarks.eval_steane_ppo \
   --steane-channel-corr-f 1e4 \
   --steane-channel-corr-g 1.0 \
   --steane-channel-corr-g-mode per_circuit
+```
+
+Quick smoke example for measurement readout flips:
+
+```bash
+python -m rl_train.benchmarks.eval_steane_ppo \
+  --total-timesteps 8 \
+  --rollout-steps 2 \
+  --steane-n-rounds 1 \
+  --steane-shots-per-step 2 \
+  --post-eval-episodes 1 \
+  --eval-steane-shots-per-step 2 \
+  --steane-measurement-bitflip-prob 0.01
+```
+
+Example: full composite channel (Google + correlated + measurement flip):
+
+```bash
+python -m rl_train.benchmarks.eval_steane_ppo \
+  --total-timesteps 512 \
+  --rollout-steps 32 \
+  --steane-n-rounds 4 \
+  --steane-shots-per-step 4 \
+  --post-eval-episodes 8 \
+  --eval-steane-shots-per-step 24 \
+  --steane-noise-channel composed_google_gate_specific_correlated \
+  --steane-channel-corr-f 1e4 \
+  --steane-channel-corr-g 0.4 \
+  --steane-channel-corr-g-mode per_circuit \
+  --steane-measurement-bitflip-prob 0.01
 ```
 
 Where to plug in your own correlated physics model:

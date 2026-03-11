@@ -180,6 +180,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # Deprecated aliases kept for backward compatibility with existing scripts.
     parser.add_argument("--steane-channel-regime-a", type=float, default=1.0)
     parser.add_argument("--steane-channel-regime-b", type=float, default=1.0)
+    parser.add_argument(
+        "--steane-measurement-bitflip-prob",
+        type=float,
+        default=0.0,
+        help="Symmetric pre-measurement X-flip probability applied before each Z-basis M gate.",
+    )
     parser.add_argument("--steane-shot-workers", type=int, default=1)
     parser.add_argument("--steane-collect-traces", action="store_true")
     parser.add_argument("--steane-reset-drift-on-episode", action="store_true")

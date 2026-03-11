@@ -484,7 +484,7 @@ A:
      - 设定建议：
        - 如果你认为器件同时有“门错控 + correlated idle background”，这是最合理的综合模型。
 5. `f` 在当前实现里的严格含义：
-   - 它不是直接对“整条 circuit 总时间”起作用，而是先转成**相邻 idle window 的状态翻转概率**。
+   - 它不是直接对“整条 circuit 总时间”起作用，而是先转成**相邻 idle window 的状态翻转概率**。(🙏🙏🙏)
    - 代码里：
      - `idle_s = idle_ns * 1e-9`
      - `rho = exp(-f * idle_s)`
@@ -499,7 +499,7 @@ A:
      - `base_strength = p_1q_base + sensitivity_1q * mismatch_global`
    - 再乘 `g` 得到目标总 Pauli 强度：
      - `p_total_target = clip(base_strength * g, 0, p_clip_max)`
-   - 所以 `g` 是**强度缩放因子**，不是时间参数。
+   - 所以 `g` 是**强度缩放因子**，不是时间参数。(🙏🙏🙏) 
 8. 你提到的关键问题是对的：
    - 同一个物理过程，如果实验总时长 `T` 不同，那么“低频/高频”“强/弱”这些词本来都依赖时间尺度。
    - 如果模拟里完全没有时间标尺，只剩 layer index，那么 `f` 用 Hz 表示其实是不严谨的。
@@ -565,3 +565,40 @@ A:
 6. 所以准确说法是：
    - 现在“能算总时间”，而且定义已经清楚；
    - 只是还没有封装成类似 `compute_circuit_total_time_ns(circuit)` 这样的统一 helper / report 字段。
+
+Q: 加入 measurement error（pre-measure bit-flip）后，会不会让 composite RL simulation 明显变慢？
+A:
+1. 做过一次小而有代表性的 3-run timing 对比，配置选的是一个实际跑过的 composite benchmark family，但规模控制在 10 分钟以内：
+   - `total_timesteps=512`
+   - `rollout_steps=32`
+   - `steane_n_rounds=4`
+   - `steane_shots_per_step=4`
+   - `post_eval_episodes=8`
+   - `eval_steane_shots_per_step=24`
+   - `steane_noise_channel=composed_google_gate_specific_correlated`
+   - `steane_channel_corr_f=1e4`
+   - `steane_channel_corr_g=0.4`
+   - `steane_channel_corr_g_mode=per_circuit`
+2. 比较对象：
+   - baseline composite: `google + correlated`
+   - full composite: `google + correlated + measurement bit-flip`
+   - measurement 参数：`steane_measurement_bitflip_prob=0.01`
+3. 3 次 wall-clock 结果：
+   - baseline composite:
+     - `19.61s`
+     - `20.78s`
+     - `21.22s`
+   - full composite:
+     - `23.07s`
+     - `22.68s`
+     - `23.18s`
+4. 汇总：
+   - baseline mean/std: `20.54s +- 0.84s`
+   - full composite mean/std: `22.98s +- 0.26s`
+   - 平均额外开销：`+2.44s`
+   - 相对增幅：约 `+11.9%`
+   - 运行时间比：约 `1.12x`
+5. 结论：
+   - measurement error 会带来**可见但不大的**额外 runtime；
+   - 当前实现下，它不是 correlated channel 那种大 bottleneck；
+   - 对这个代表性 composite 配置来说，可以把它理解成“大约 10% 出头”的额外成本，而不是数量级变慢。

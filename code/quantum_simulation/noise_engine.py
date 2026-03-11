@@ -109,6 +109,73 @@ class NoiseModel:
         return self
 
 
+class PreMeasurementBitFlipNoiseModel(NoiseModel):
+    """Insert pre-measurement X flips on Z-basis measurements.
+
+    This models symmetric readout error for `M`-style measurements by applying
+    an `X_ERROR(p)` immediately before each supported measurement instruction.
+    It can wrap an existing base noise model so the measurement error composes
+    with gate/idle noise without introducing statefulness of its own.
+    """
+
+    _SUPPORTED_MEASURE_GATES = {"M", "MZ", "MR", "MRZ"}
+
+    def __init__(
+        self,
+        p_flip: float,
+        *,
+        base_model: Optional[NoiseModel] = None,
+        enabled: bool = True,
+        validate: bool = True,
+        tolerance: float = 1e-12,
+    ):
+        self.p_flip = float(p_flip)
+        self.base_model = base_model if base_model is not None else NoiseModel(enabled=False)
+        self.enabled = bool(enabled) and self.p_flip > 0.0
+        self.validate = bool(validate)
+        self.tolerance = float(tolerance)
+        self.disable_apply_cache = bool(getattr(self.base_model, "disable_apply_cache", False))
+        self.stateful = bool(getattr(self.base_model, "stateful", False))
+        self.supports_parallel_shots = bool(getattr(self.base_model, "supports_parallel_shots", False))
+        if self.validate:
+            self.p_flip = validate_probability(self.p_flip, self.tolerance)
+
+    def _should_inject_before(self, instruction: stim.CircuitInstruction) -> bool:
+        return instruction.name in self._SUPPORTED_MEASURE_GATES
+
+    def start_shot(self) -> None:
+        start_fn = getattr(self.base_model, "start_shot", None)
+        if callable(start_fn):
+            start_fn()
+
+    def fork_for_shot(self, shot_index: int) -> "PreMeasurementBitFlipNoiseModel":
+        base = self.base_model
+        fork_fn = getattr(base, "fork_for_shot", None)
+        if callable(fork_fn):
+            base = fork_fn(int(shot_index))
+        return PreMeasurementBitFlipNoiseModel(
+            p_flip=float(self.p_flip),
+            base_model=base,
+            enabled=bool(self.enabled),
+            validate=bool(self.validate),
+            tolerance=float(self.tolerance),
+        )
+
+    def apply(self, circuit: stim.Circuit) -> stim.Circuit:
+        base_circuit = self.base_model.apply(circuit) if getattr(self.base_model, "enabled", False) else circuit
+        if not self.enabled or self.p_flip <= 0.0:
+            return base_circuit
+
+        out = stim.Circuit()
+        for inst in _iter_flat_instructions(base_circuit):
+            if self._should_inject_before(inst):
+                qubits = _extract_qubit_targets(inst)
+                if qubits:
+                    out.append("X_ERROR", qubits, [self.p_flip])
+            out.append(inst.name, inst.targets_copy(), inst.gate_args_copy())
+        return out
+
+
 def compile_time_expression(expr: str) -> RateFn:
     """Compile a user expression into a callable rate function.
 

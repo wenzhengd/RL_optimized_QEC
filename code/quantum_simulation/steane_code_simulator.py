@@ -52,6 +52,7 @@ try:
         ComposedGateAndCorrelatedIdleNoiseModel,
         HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
+        PreMeasurementBitFlipNoiseModel,
     )
 except ModuleNotFoundError:
     # Package import path, e.g. `from quantum_simulation.steane_code_simulator import ...`
@@ -59,6 +60,7 @@ except ModuleNotFoundError:
         ComposedGateAndCorrelatedIdleNoiseModel,
         HiddenMarkovCorrelatedPauliNoiseModel,
         NoiseModel,
+        PreMeasurementBitFlipNoiseModel,
     )
 
 
@@ -143,6 +145,7 @@ def _parallel_noise_for_shot(noise: NoiseModel, shot_index: int) -> NoiseModel:
 
 @dataclass(frozen=True)
 class _StreamEventPlan:
+    pre_instruction_noise: tuple[stim.CircuitInstruction, ...]
     ideal_instruction: stim.CircuitInstruction
     gate_noise_instructions: tuple[stim.CircuitInstruction, ...]
     add_idle_window: bool
@@ -187,15 +190,21 @@ def _compile_stream_circuit_plan(
     noise: NoiseModel,
     circuit: stim.Circuit,
 ) -> Optional[_StreamCircuitPlan]:
+    measurement_model: Any = None
+    base_noise = noise
+    if isinstance(noise, PreMeasurementBitFlipNoiseModel):
+        measurement_model = noise
+        base_noise = noise.base_model
+
     gate_model: Any = None
     idle_model: Any = None
-    if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel):
-        idle_model = noise
-        timeline_builder = noise.timeline_builder
-    elif isinstance(noise, ComposedGateAndCorrelatedIdleNoiseModel):
-        gate_model = noise.gate_model
-        idle_model = noise.idle_model
-        timeline_builder = noise.timeline_builder
+    if isinstance(base_noise, HiddenMarkovCorrelatedPauliNoiseModel):
+        idle_model = base_noise
+        timeline_builder = base_noise.timeline_builder
+    elif isinstance(base_noise, ComposedGateAndCorrelatedIdleNoiseModel):
+        gate_model = base_noise.gate_model
+        idle_model = base_noise.idle_model
+        timeline_builder = base_noise.timeline_builder
     else:
         return None
 
@@ -209,7 +218,16 @@ def _compile_stream_circuit_plan(
     idle_enabled = bool(getattr(idle_model, "enabled", True))
     for op_index, ev in enumerate(events):
         inst = ev.instruction
+        pre_instruction_noise: list[stim.CircuitInstruction] = []
         gate_noise_instructions: list[stim.CircuitInstruction] = []
+
+        if measurement_model is not None and bool(getattr(measurement_model, "enabled", True)):
+            if measurement_model._should_inject_before(inst):
+                qubits = _extract_qubit_targets_local(inst)
+                if qubits and float(measurement_model.p_flip) > 0.0:
+                    pre_instruction_noise.append(
+                        _make_single_instruction("X_ERROR", qubits, [float(measurement_model.p_flip)])
+                    )
 
         if gate_model is not None and bool(getattr(gate_model, "enabled", True)):
             name = inst.name
@@ -233,6 +251,7 @@ def _compile_stream_circuit_plan(
 
         out_events.append(
             _StreamEventPlan(
+                pre_instruction_noise=tuple(pre_instruction_noise),
                 ideal_instruction=inst,
                 gate_noise_instructions=tuple(gate_noise_instructions),
                 add_idle_window=(op_index < len(events) - 1 and idle_enabled),
@@ -249,12 +268,16 @@ def _sim_do_with_noise(
     stream_plan_cache: Optional[dict[tuple[int, int], tuple[stim.Circuit, _StreamCircuitPlan]]] = None,
 ) -> None:
     if _ENABLE_STREAMING_NOISE and stream_plan_cache is not None:
-        if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel):
-            noise_key = 1
-        elif isinstance(noise, ComposedGateAndCorrelatedIdleNoiseModel):
-            noise_key = int(id(noise.gate_model))
+        stream_noise = noise.base_model if isinstance(noise, PreMeasurementBitFlipNoiseModel) else noise
+        measure_key = 0
+        if isinstance(noise, PreMeasurementBitFlipNoiseModel):
+            measure_key = int(round(float(noise.p_flip) * 1e12))
+        if isinstance(stream_noise, HiddenMarkovCorrelatedPauliNoiseModel):
+            noise_key = hash(("corr_idle", measure_key))
+        elif isinstance(stream_noise, ComposedGateAndCorrelatedIdleNoiseModel):
+            noise_key = hash(("composed_corr_idle", int(id(stream_noise.gate_model)), measure_key))
         else:
-            noise_key = int(id(noise))
+            noise_key = hash(("generic_noise", int(id(noise)), measure_key))
         cache_key = (int(id(circuit)), int(noise_key))
         cached = stream_plan_cache.get(cache_key)
         plan = None
@@ -267,8 +290,8 @@ def _sim_do_with_noise(
                 plan = compiled
 
         if plan is not None:
-            idle_model = noise if isinstance(noise, HiddenMarkovCorrelatedPauliNoiseModel) else getattr(
-                noise,
+            idle_model = stream_noise if isinstance(stream_noise, HiddenMarkovCorrelatedPauliNoiseModel) else getattr(
+                stream_noise,
                 "idle_model",
                 None,
             )
@@ -281,6 +304,8 @@ def _sim_do_with_noise(
                 return
 
             for event in plan.events:
+                for noise_inst in event.pre_instruction_noise:
+                    simulator.do(noise_inst)
                 simulator.do(event.ideal_instruction)
                 for noise_inst in event.gate_noise_instructions:
                     simulator.do(noise_inst)

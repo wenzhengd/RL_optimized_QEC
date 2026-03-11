@@ -101,6 +101,7 @@ class SteaneAdapterConfig:
     # non-correlated-channel sweeps (e.g. parametric_google).
     channel_regime_a: float = 1.0
     channel_regime_b: float = 1.0
+    measurement_bitflip_prob: float = 0.0
     # Parallel Monte-Carlo shots inside one simulator call.
     # 1 means no parallelism.
     shot_workers: int = 1
@@ -404,6 +405,7 @@ class SteaneOnlineSteeringSimulator:
             channel_corr_windows_per_step=corr_windows_per_shot_est,
             channel_regime_a=self.cfg.channel_regime_a,
             channel_regime_b=self.cfg.channel_regime_b,
+            measurement_bitflip_prob=self.cfg.measurement_bitflip_prob,
             enabled=True,
         )
 
@@ -498,6 +500,7 @@ class SteaneOnlineSteeringSimulator:
             "channel_corr_windows_per_shot_est": int(corr_windows_per_shot_est),
             "channel_regime_a": float(self.cfg.channel_regime_a),
             "channel_regime_b": float(self.cfg.channel_regime_b),
+            "measurement_bitflip_prob": float(self.cfg.measurement_bitflip_prob),
             "control_mode": self.cfg.control_mode,
             "n_1q_control_slots": int(self.cfg.n_1q_control_slots),
             "n_2q_control_slots": int(self.cfg.n_2q_control_slots),

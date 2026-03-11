@@ -42,6 +42,7 @@ def build_steane_components(args: argparse.Namespace, reward_fn: RewardFn) -> Co
         channel_corr_g_mode=args.steane_channel_corr_g_mode,
         channel_regime_a=args.steane_channel_regime_a,
         channel_regime_b=args.steane_channel_regime_b,
+        measurement_bitflip_prob=args.steane_measurement_bitflip_prob,
         shot_workers=args.steane_shot_workers,
         collect_traces=args.steane_collect_traces,
         reset_drift_on_episode=args.steane_reset_drift_on_episode,
