@@ -6,426 +6,231 @@
 \usepackage{mathtools}
 \usepackage{enumitem}
 \usepackage{graphicx}
-\usepackage{listings}
-\usepackage{xcolor}
 
-\definecolor{codegray}{rgb}{0.25,0.25,0.25}
-\lstset{
-  basicstyle=\ttfamily\small,
-  columns=fullflexible,
-  breaklines=true,
-  frame=single,
-  rulecolor=\color{codegray},
-  showstringspaces=false
-}
-
-\title{\bf Modeling correlated Pauli error channel}
-\author{}
+\title{\bf Modeling Correlated Pauli Error Channel}
 \date{}
 
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
-\newtheorem{proposition}{Proposition}
 
 \begin{document}
+
 \maketitle
 
 \begin{abstract}
-This note gives a Hamiltonian-free, sampling-based protocol to model \emph{low-frequency (time-correlated)} dephasing noise in gate-based quantum circuits using a \emph{Hidden Markov Pauli channel}. The construction produces a sequence of \emph{conditional Pauli channels} $\{\mathcal{E}_j(\,\cdot\,|s_j)\}_{j=1}^N$ driven by a slowly varying classical hidden state $s_j$. Each layer remains a Pauli channel (Stim-friendly), while temporal correlations are introduced through Markovian memory of the hidden state. We provide the full problem setup, mathematical specification, parameter choices to match a desired correlation time, and an implementation recipe for Stim simulations (external sampling + Pauli injection), suitable for replication.
+We present a Hamiltonian-free construction for temporally correlated Pauli noise suitable for stabilizer circuit simulations. 
+The approach models low-frequency noise through a hidden classical Markov process that modulates Pauli error probabilities across circuit layers. 
+The resulting sequence of conditional Pauli channels remains compatible with stabilizer simulators such as Stim. 
+The model provides a practical approximation to slowly varying noise environments widely discussed in the quantum noise literature, including $1/f$ noise and telegraph noise processes \cite{paladino2014}.
 \end{abstract}
 
-\tableofcontents
+\section{Motivation}
 
-\section{Problem setup}
+In realistic quantum hardware, noise processes often exhibit strong temporal correlations. 
+In particular, solid-state qubit platforms such as superconducting circuits and semiconductor spin qubits are dominated by low-frequency environmental fluctuations including charge noise, flux noise, and two-level fluctuators \cite{paladino2014}. 
+These processes generate error rates that drift slowly in time rather than fluctuating independently between gate operations.
 
-We consider an $n$-qubit circuit executed in discrete \emph{layers} (time steps) $j=1,\dots,N$.
-Let $\rho_j$ be the density operator immediately \emph{before} applying the ideal layer-$j$ Clifford operation $C_j$.
-An ``interleaved noise model'' updates
+Despite this, most circuit-level simulations assume independent Pauli noise after each gate layer. 
+While this assumption greatly simplifies stabilizer simulation, it neglects correlations that may significantly affect logical error rates in quantum error correction. 
+Several studies have shown that temporally correlated errors can degrade thresholds and lead to burst-like error events that are more difficult for decoders to correct \cite{novais2007,ball2016}.
+
+The goal of this document is therefore to construct a temporally correlated noise model that satisfies the following requirements:
+
+\begin{itemize}
+\item Each circuit layer is affected by a Pauli channel.
+\item Error rates vary slowly in time to mimic low-frequency noise.
+\item The model avoids explicit Hamiltonian simulation.
+\item The resulting process can be sampled efficiently and injected into stabilizer simulations such as Stim \cite{gidney2021}.
+\end{itemize}
+
+\section{Circuit model}
+
+Consider a quantum circuit decomposed into discrete layers
+
 \begin{equation}
-\rho_{j+1} \;=\; \mathcal{E}_j\!\left( C_j \rho_j C_j^\dagger \right),
-\qquad j=1,\dots,N,
-\label{eq:interleaved}
+C = C_N C_{N-1}\cdots C_1 ,
 \end{equation}
-where $\mathcal{E}_j$ is a completely-positive trace-preserving (CPTP) noise channel applied after layer $j$.
 
-\paragraph{Goal.}
-Build $\{\mathcal{E}_j\}_{j=1}^N$ such that:
-\begin{enumerate}[label=\textbf{G\arabic*}.]
-\item \textbf{Pauli (Stim-compatible):} each $\mathcal{E}_j$ is a Pauli channel, ideally a mixture of Pauli errors applied after the layer.
-\item \textbf{Low-frequency temporal correlations:} errors are not i.i.d.; the noise has memory across layers (e.g.\ exponential correlation time $\tau_c \gg$ layer duration).
-\item \textbf{Hamiltonian-free:} avoid simulating continuous-time dynamics; instead sample a correlated discrete process that induces the desired correlations.
-\item \textbf{Simulation-ready:} provide a protocol to generate per-shot correlated error sequences and inject them into Stim simulations.
-\end{enumerate}
+where each $C_j$ is a Clifford gate layer.
 
-\paragraph{Scope.}
-We focus on temporally correlated dephasing (Pauli-$Z$) noise because it is a dominant low-frequency noise mechanism.
-The construction extends straightforwardly to multi-Pauli noise ($X/Y/Z$ mixtures) and to spatially correlated variants (shared hidden states), which we briefly comment on later.
+In the standard interleaved noise picture the state evolves as
 
-\section{Hidden Markov Pauli channel: definition}
-
-The key idea is to introduce a slowly varying \emph{classical hidden state} $s_j$ that models the ``noise environment'' at layer $j$.
-Conditioned on $s_j$, the layer noise is a standard Pauli channel. Temporal correlations arise because $\{s_j\}$ is correlated.
-
-\subsection{Hidden state dynamics}
-
-Let the hidden state take values in a finite set
-\[
-s_j \in \{1,2,\dots,K\}.
-\]
-We assume $s_j$ follows a time-homogeneous Markov chain with transition matrix $T\in\mathbb{R}^{K\times K}$:
 \begin{equation}
-\Pr(s_{j+1}=b \mid s_j=a)=T_{ab},
-\qquad
-T_{ab}\ge 0,
-\qquad
-\sum_{b=1}^K T_{ab}=1.
-\label{eq:markov}
+\rho_{j+1} = \mathcal{E}_j \left(C_j \rho_j C_j^\dagger\right).
 \end{equation}
-Let $\pi$ be an initial distribution for $s_1$ (often the stationary distribution satisfying $\pi=\pi T$).
 
-\subsection{Conditional Pauli channel at each layer}
+In the conventional i.i.d. noise model one assumes
 
-Conditioned on $s_j=a$, define a Pauli channel $\mathcal{E}^{(a)}$.
-For pure dephasing (single-qubit, or applied independently on each qubit) a common choice is:
 \begin{equation}
-\mathcal{E}^{(a)}(\rho)
-=
-(1-p_a)\rho + p_a\, Z\rho Z,
-\qquad p_a\in[0,1],
-\label{eq:condZ}
+\mathcal{E}_j = \mathcal{E}
 \end{equation}
-where $p_a$ is the $Z$-flip probability in environment state $a$.
 
-More generally, for an $n$-qubit Pauli channel one can specify a distribution over $n$-qubit Paulis $P\in\mathcal{P}_n$:
+for all layers. 
+However, such a model cannot capture slow drift of noise amplitudes.
+
+To introduce correlations we instead construct a sequence of channels
+
 \begin{equation}
-\mathcal{E}^{(a)}(\rho)
-=
-\sum_{P\in\mathcal{P}_n} q_a(P)\; P\rho P,
-\qquad
-q_a(P)\ge 0,\ \sum_P q_a(P)=1.
-\label{eq:condPauli}
+\{\mathcal{E}_1,\mathcal{E}_2,\ldots,\mathcal{E}_N\}
 \end{equation}
-For many QEC simulations, it is enough to use independent single-qubit errors (a product distribution) or correlated multi-qubit Paulis (e.g.\ a burst event flipping a subset).
 
-\subsection{The correlated channel sequence}
+whose parameters evolve according to a stochastic process.
 
-The effective layer-$j$ noise channel is
+\section{Hidden Markov Pauli channel}
+
+We introduce a classical hidden variable
+
 \begin{equation}
-\mathcal{E}_j(\cdot) \;=\; \mathcal{E}^{(s_j)}(\cdot),
-\label{eq:Ej}
+s_j \in \{1,2,\dots,K\}
 \end{equation}
-where $s_j$ is sampled from the Markov chain \eqref{eq:markov}.
-This produces a \emph{random} channel sequence $\{\mathcal{E}_j\}_{j=1}^N$.
-A single Monte Carlo \emph{shot} corresponds to one sample path $(s_1,\dots,s_N)$ and one corresponding Pauli error realization.
 
-\begin{definition}[Hidden Markov Pauli channel]
-A \emph{Hidden Markov Pauli channel} is the random process defined by \eqref{eq:markov} and \eqref{eq:condPauli}--\eqref{eq:Ej}.
+representing the instantaneous noise environment.
+
+The hidden variable evolves according to a Markov chain
+
+\begin{equation}
+P(s_{j+1}=b|s_j=a) = T_{ab},
+\end{equation}
+
+with transition matrix
+
+\begin{equation}
+T_{ab}\ge0, \qquad \sum_b T_{ab}=1.
+\end{equation}
+
+Conditioned on the environment state $s_j$, the noise channel applied at layer $j$ is a Pauli channel
+
+\begin{equation}
+\mathcal{E}^{(s_j)}(\rho)
+= \sum_{P\in\mathcal{P}_n} q_{s_j}(P)\,P\rho P ,
+\end{equation}
+
+where $\mathcal{P}_n$ denotes the $n$-qubit Pauli group.
+
+\begin{definition}
+The stochastic channel sequence generated by the hidden state process $\{s_j\}$ together with the conditional Pauli distributions $\{q_a(P)\}$ is called a Hidden Markov Pauli channel.
 \end{definition}
 
-\section{Why this models low-frequency noise (without Hamiltonians)}
+Correlated quantum channels of this form have been studied in quantum information theory as channels with memory \cite{macchiavello2002}.
 
-Low-frequency noise means that the ``noise strength'' drifts slowly: adjacent layers see similar noise.
-In this model, ``noise strength'' is encoded by $s_j$. If $T$ has large diagonal entries, then $s_{j+1}=s_j$ with high probability, i.e.\ the environment changes slowly.
+\section{Two-state low-frequency noise model}
 
-\subsection{Two-state telegraph model (minimal, very useful)}
+A particularly useful minimal model is obtained using two hidden states
 
-The simplest nontrivial case is $K=2$, with states $s\in\{0,1\}$ representing \emph{quiet} and \emph{noisy} regimes:
 \begin{equation}
-p_0=p_{\mathrm{low}},\qquad p_1=p_{\mathrm{high}}.
+s_j \in \{0,1\}.
 \end{equation}
-Let the Markov chain be
-\begin{equation}
-T=
-\begin{pmatrix}
-1-\gamma & \gamma\\
-\gamma & 1-\gamma
-\end{pmatrix},
-\qquad \gamma\in[0,1].
-\label{eq:telegraphT}
-\end{equation}
-Then the expected run length in a state is $\approx 1/\gamma$ layers, giving a correlation time (in layers) of order $1/\gamma$.
-This yields \emph{bursty} dephasing: once the environment is ``bad'', $Z$ errors remain more likely for many subsequent layers.
 
-\begin{remark}[Correlation time calibration (rule of thumb)]
-For \eqref{eq:telegraphT}, the state autocorrelation decays like $(1-2\gamma)^{|j-k|}$.
-Thus a convenient layer-based correlation time is
-\[
-\kappa \;\approx\; \frac{-1}{\ln(1-2\gamma)} \;\approx\; \frac{1}{2\gamma}\quad (\gamma\ll 1).
-\]
-If each layer corresponds to physical time $\tau$, then $\tau_c \approx \kappa\,\tau$.
-\end{remark}
+These states represent
 
-\subsection{Quasi-static limit as a special case}
-
-If the noise is extremely low-frequency over the circuit duration, one may take $T=I$ (or $\gamma\to 0$ in \eqref{eq:telegraphT}), so that $s_j$ is constant across all layers in a shot.
-Then each shot experiences a fixed noise strength $p_{s}$, but shot-to-shot the strength changes. This is a standard discrete proxy for quasi-static noise and already produces strong temporal correlations.
-
-\section{Sampling protocol (per shot)}
-
-We now write the sampling procedure explicitly for the most common case: temporally correlated $Z$ noise (possibly on multiple qubits).
-
-\subsection{Case A: single-qubit correlated dephasing}
-
-Fix $K$, transition matrix $T$, and per-state dephasing probabilities $\{p_a\}_{a=1}^K$.
-
-A single shot produces a binary error indicator sequence $e_1,\dots,e_N$ where $e_j=1$ means apply $Z$ after layer $j$:
-\begin{equation}
-s_1 \sim \pi,\quad s_{j+1}\sim T_{s_j,\cdot},\quad
-e_j \sim \mathrm{Bernoulli}(p_{s_j}).
-\label{eq:sampling_single}
-\end{equation}
-The corresponding per-layer channel realization is
-\[
-\mathcal{E}_j(\rho)=
-\begin{cases}
-\rho,& e_j=0,\\
-Z\rho Z,& e_j=1.
-\end{cases}
-\]
-
-\subsection{Case B: multi-qubit correlated dephasing, independent across qubits}
-
-For $n$ qubits, the simplest extension is to use the \emph{same} hidden state $s_j$ for all qubits (capturing a global drift) but independent Bernoulli draws per qubit:
-\begin{equation}
-e_{j}^{(q)} \sim \mathrm{Bernoulli}(p_{s_j}),\qquad q=1,\dots,n.
-\label{eq:multi_indep}
-\end{equation}
-Then apply $Z$ on each qubit $q$ with $e_j^{(q)}=1$.
-This creates temporal correlations (from $s_j$) and also mild spatial correlation if $s_j$ is shared.
-
-\subsection{Case C: multi-qubit bursts (correlated Pauli events)}
-
-To model bursts, one can define, in state $a$, a distribution over subsets $B\subseteq\{1,\dots,n\}$:
-\begin{equation}
-\Pr(B_j=B\mid s_j=a)=r_a(B),
-\qquad
-\sum_{B} r_a(B)=1,
-\label{eq:burst}
-\end{equation}
-and apply the multi-qubit Pauli $Z_B\equiv \prod_{q\in B} Z_q$ after layer $j$.
-This is still a Pauli channel, but can produce long error strings and strongly affect decoder performance.
-
-\section{Parameter choices: matching a desired ``low-frequency'' behavior}
-
-This model is deliberately modular. In practice you typically want to match:
-(i) the mean error rate per layer, and
-(ii) a correlation time.
-
-\subsection{Mean error rate}
-
-Let $\bar p$ be the desired marginal $Z$ error probability per layer (averaged over long time / stationary regime).
-If $s_j$ is stationary with distribution $\pi$, then
-\begin{equation}
-\mathbb{E}[p_{s_j}] = \sum_{a=1}^K \pi_a p_a = \bar p.
-\label{eq:meanp}
-\end{equation}
-This is a linear constraint on $\{p_a\}$ (given $\pi$).
-
-\subsection{Correlation time (two-state case)}
-
-For $K=2$ with \eqref{eq:telegraphT} and stationary $\pi=(1/2,1/2)$, the hidden-state autocorrelation is $(1-2\gamma)^{|j-k|}$.
-The error indicators $e_j$ inherit correlations of the same functional form (up to a scaling factor depending on $p_{\mathrm{low}},p_{\mathrm{high}}$).
-Thus choosing $\gamma\ll 1$ gives low-frequency drift; the effective correlation time is $\kappa\approx 1/(2\gamma)$ layers.
-
-\subsection{Practical recipe}
-
-A practical and transparent recipe is:
-\begin{enumerate}[label=\textbf{R\arabic*}.]
-\item Choose a small $\gamma$ to set correlation length $\kappa\approx 1/(2\gamma)$ layers.
-\item Choose $p_{\mathrm{low}}$ and $p_{\mathrm{high}}$ to match the mean $\bar p$ and the variance of the instantaneous rate you want.
-A simple choice is:
-\[
-p_{\mathrm{low}}=\bar p - \Delta,\quad p_{\mathrm{high}}=\bar p+\Delta,
-\]
-clipped to $[0,1]$, where $\Delta$ sets how ``bursty'' the noise is.
-\end{enumerate}
-
-\section{How to use this with Stim}
-
-\subsection{Key limitation and workaround}
-
-Stim's built-in stochastic noise instructions (e.g.\ \texttt{Z\_ERROR(p)}) generate i.i.d.\ errors \emph{within a single sampling call}.
-Therefore, to simulate \emph{temporally correlated} errors, one should:
-\begin{enumerate}[label=\textbf{S\arabic*}.]
-\item Sample the hidden-state path and the corresponding Pauli errors \emph{externally} (in Python).
-\item Inject those Pauli errors into the simulation \emph{between layers}.
-\end{enumerate}
-This keeps the circuit Clifford while allowing non-i.i.d.\ error sequences.
-
-\subsection{Layered Clifford simulation pattern}
-
-Assume your ideal circuit can be decomposed as a product of layer circuits:
-\begin{equation}
-C = C_N C_{N-1}\cdots C_1,
-\label{eq:layer_decomp}
-\end{equation}
-where each $C_j$ is a Stim circuit consisting of Clifford gates and (optionally) measurements/resets for that layer.
-
-For a single shot, the noisy evolution is simulated by iterating:
-\begin{equation}
-\rho_{j+1} = \widetilde{\mathcal{E}}_j\!\left( C_j \rho_j C_j^\dagger \right),
-\end{equation}
-where $\widetilde{\mathcal{E}}_j$ is the \emph{sampled} Pauli error (e.g.\ apply $Z$ or apply identity). This is exactly what Stim's \texttt{TableauSimulator} supports: apply Clifford layer $C_j$, then apply Pauli(s).
-
-\subsection{Python pseudo-code (replicable)}
-
-The following pseudo-code captures the essential logic. It assumes:
-(i) you have a list \texttt{layers} of Stim circuits $C_j$,
-(ii) you know which qubit(s) the $Z$ noise applies to (or you sample subsets),
-(iii) you externally sample $e_j$ (or subsets $B_j$).
-
-\begin{lstlisting}[language=Python]
-import stim
-import random
-
-def sample_hidden_markov_path(N, pi, T):
-    # pi: list length K, T: list of lists KxK
-    K = len(pi)
-    # sample s1
-    r = random.random()
-    cum = 0.0
-    s = 0
-    for a in range(K):
-        cum += pi[a]
-        if r <= cum:
-            s = a
-            break
-    path = [s]
-    for _ in range(N-1):
-        a = path[-1]
-        r = random.random()
-        cum = 0.0
-        b = 0
-        for bb in range(K):
-            cum += T[a][bb]
-            if r <= cum:
-                b = bb
-                break
-        path.append(b)
-    return path
-
-def sample_correlated_Z_errors(N, pi, T, p_by_state):
-    # returns binary list e_j
-    s_path = sample_hidden_markov_path(N, pi, T)
-    e = []
-    for j in range(N):
-        p = p_by_state[s_path[j]]
-        e.append(1 if random.random() < p else 0)
-    return e
-
-def run_shots(layers, num_shots, pi, T, p_by_state, noisy_qubit=0):
-    sim = stim.TableauSimulator()
-    N = len(layers)
-    outcomes = []
-    for _ in range(num_shots):
-        sim.set_inverse_tableau_to_identity()
-        e = sample_correlated_Z_errors(N, pi, T, p_by_state)
-        for j in range(N):
-            sim.do_circuit(layers[j])
-            if e[j] == 1:
-                sim.z(noisy_qubit)   # inject Pauli-Z after layer j
-        # read out measurement record if present:
-        outcomes.append(sim.current_measurement_record())
-    return outcomes
-\end{lstlisting}
-
-\paragraph{Notes for correctness.}
-\begin{enumerate}[label=\textbf{N\arabic*}.]
-\item \texttt{TableauSimulator} operations \texttt{sim.z(q)}, \texttt{sim.x(q)}, \texttt{sim.y(q)} apply Paulis exactly (no sampling inside Stim), which is what we need for correlated noise.
-\item If your layers include measurements/resets, \texttt{current\_measurement\_record()} returns the shot's measurement bits in order. You can also compute detectors/observables if you build them into the circuit and use appropriate Stim APIs.
-\item The correlated noise sampling is independent of Stim and can be swapped out (e.g.\ burst model \eqref{eq:burst}, multi-qubit subsets, etc.).
-\end{enumerate}
-
-\subsection{Pauli-frame subtlety (multi-qubit, general Clifford circuits)}
-
-The injection rule ``apply $Z$ after layer $j$'' is unambiguous in the \emph{physical frame}.
-In a Clifford circuit, Paulis propagate:
-\[
-C_j (P) C_j^\dagger \in \mathcal{P}_n.
-\]
-If your noise model is defined in a \emph{toggling frame} or in a \emph{gate-local frame}, you must specify where in \eqref{eq:interleaved} the Pauli is inserted.
-
-This note adopts the standard interleaving convention: \emph{noise acts after the ideal layer}. If you prefer ``noise before the layer'', adjust by conjugation:
-\[
-\text{(before)}\quad P\;\text{then}\;C_j
-\ \equiv\
-C_j \;\text{then}\; (C_j P C_j^\dagger).
-\]
-In practice: keep the rule consistent, and inject Paulis at the chosen location accordingly.
-
-\section{Worked specification: two-state correlated dephasing channel}
-
-For replication, here is a complete minimal specification (single qubit):
 \begin{itemize}
-\item Hidden states: $s\in\{0,1\}$.
-\item Transition matrix: $T$ as in \eqref{eq:telegraphT} with parameter $\gamma$.
-\item Initial distribution: stationary $\pi=(1/2,1/2)$ (valid for \eqref{eq:telegraphT}).
-\item Conditional channels:
-\[
-\mathcal{E}^{(0)}(\rho)=(1-p_{\mathrm{low}})\rho+p_{\mathrm{low}}Z\rho Z,
-\quad
-\mathcal{E}^{(1)}(\rho)=(1-p_{\mathrm{high}})\rho+p_{\mathrm{high}}Z\rho Z.
-\]
+\item a low-noise environment
+\item a high-noise environment
 \end{itemize}
-A single shot:
-\[
-s_1\sim\pi,\quad s_{j+1}\sim T_{s_j,\cdot},\quad e_j\sim\mathrm{Bernoulli}(p_{s_j}).
-\]
-Inject $Z$ after layer $j$ if $e_j=1$.
 
-\section{Extensions (brief)}
+with corresponding Pauli error probabilities
 
-\subsection{From pure $Z$ noise to full Pauli noise}
+\begin{equation}
+p_0 = p_{\mathrm{low}}, \qquad p_1 = p_{\mathrm{high}}.
+\end{equation}
 
-Replace \eqref{eq:condZ} by a per-state distribution over $\{I,X,Y,Z\}$ (single qubit) or over $\mathcal{P}_n$ (multi-qubit).
-For single qubit:
-\[
-\mathcal{E}^{(a)}(\rho)=q_a(I)\rho+q_a(X)X\rho X+q_a(Y)Y\rho Y+q_a(Z)Z\rho Z.
-\]
-Temporal correlation is still fully controlled by the same hidden Markov chain.
+The hidden state evolves according to
 
-\subsection{Spatial correlations}
+\begin{equation}
+T =
+\begin{pmatrix}
+1-\gamma & \gamma \\
+\gamma & 1-\gamma
+\end{pmatrix}.
+\end{equation}
 
-To model spatially correlated drift, share the same $s_j$ across many qubits (global drift), or use a small set of latent variables (e.g.\ one per region) that evolve Markovianly and drive local Pauli channels.
-This preserves Stim compatibility because the injected errors remain Pauli.
+When $\gamma$ is small the environment remains in the same state for many consecutive layers, producing strong temporal correlations. 
+This discrete model closely resembles the telegraph noise processes frequently used to describe fluctuating defects in qubit environments \cite{paladino2014}.
 
-\section{Critical self-check (replication checklist)}
+\section{Sampling procedure}
 
-This section is written as if by an independent reader trying to reproduce the protocol; it highlights common ambiguities and resolves them.
+For a circuit with $N$ layers the correlated noise process is sampled as follows.
 
-\begin{enumerate}[label=\textbf{C\arabic*}.]
-\item \textbf{Is each layer channel a valid CPTP map?}
-Yes. Conditioned on $s_j=a$, $\mathcal{E}^{(a)}$ is a convex mixture of unitary Paulis \eqref{eq:condZ} or \eqref{eq:condPauli}, hence CPTP.
-
-\item \textbf{Where exactly is noise inserted relative to gates?}
-By definition \eqref{eq:interleaved}, noise acts \emph{after} the ideal layer unitary $C_j$. If a different convention is desired (before gates), it must be implemented by conjugation as explained in the Pauli-frame note.
-
-\item \textbf{What produces temporal correlations?}
-Only the hidden chain $s_j$. If $T$ is close to identity (large diagonals), $s_j$ changes slowly, making adjacent layers share similar error rates. Setting $T$ to the identity yields the quasi-static limit.
-
-\item \textbf{Can this be simulated with Stim without modifying Stim?}
-Yes. Stim cannot generate correlated noise internally, but it can apply deterministic Paulis between Clifford layers. We therefore sample correlated errors externally and inject them through \texttt{TableauSimulator} Pauli operations.
-
-\item \textbf{Is the sampling procedure well-defined and efficient?}
-Yes. Sampling $s_j$ is $O(NK)$ (often $K\le 2$), and sampling errors is $O(N)$ (or $O(Nn)$ for $n$ qubits). This is negligible compared to large-shot stabilizer sampling.
-
-\item \textbf{Does the two-state model have a well-defined stationary distribution?}
-For \eqref{eq:telegraphT} with symmetric flips, the stationary distribution is $(1/2,1/2)$. For a general two-state matrix, solve $\pi=\pi T$ and use that $\pi$ in \eqref{eq:meanp}.
-
-\item \textbf{What exactly is ``low-frequency'' here?}
-Operationally: $\gamma\ll 1$ (or $T$ nearly diagonal), so the environment changes slowly across layers. This reproduces the ``drift'' intuition without simulating a continuous-time Hamiltonian.
+\begin{enumerate}
+\item Sample the initial environment state $s_1$ from its stationary distribution.
+\item For each layer $j$:
+\begin{enumerate}
+\item Draw $s_{j+1}$ using the transition matrix $T$.
+\item Sample a Pauli error according to distribution $q_{s_j}(P)$.
+\end{enumerate}
 \end{enumerate}
 
-\section{Summary}
+Because the hidden state changes slowly, consecutive layers tend to have similar error probabilities.
 
-A Hidden Markov Pauli channel provides a Hamiltonian-free and Stim-compatible way to model low-frequency (time-correlated) noise:
-\[
-\text{sample } s_1\sim\pi,\ s_{j+1}\sim T_{s_j,\cdot};
-\quad
-\text{then sample Pauli errors from } \mathcal{E}^{(s_j)};
-\quad
-\text{inject Paulis between Clifford layers in Stim.}
-\]
-The model is transparent, tunable (mean rate, burstiness, correlation time), and can be extended to full Pauli noise and spatial correlations while remaining within stabilizer simulation.
+\section{Stim simulation workflow}
+
+Stim is a high-performance stabilizer simulator capable of simulating large Clifford circuits with Pauli noise \cite{gidney2021}. 
+However, Stim's built-in noise primitives generate independent stochastic errors.
+
+Therefore correlated errors must be generated externally.
+
+The recommended workflow is
+
+\begin{enumerate}
+\item Decompose the circuit into Clifford layers.
+\item For each Monte Carlo shot:
+\begin{enumerate}
+\item Sample the hidden-state trajectory.
+\item Generate the corresponding Pauli error sequence.
+\item Run the circuit layer by layer in Stim.
+\item Inject the sampled Pauli errors between layers.
+\end{enumerate}
+\end{enumerate}
+
+This preserves stabilizer simulation efficiency while allowing arbitrary temporal correlations.
+
+\section{Discussion}
+
+Temporal correlations in noise have been shown to influence quantum error correction performance and decoder behavior. 
+For example, correlated error models may reduce effective thresholds and produce burst errors that degrade code performance \cite{novais2007,ball2016}. 
+Consequently, incorporating such correlations into circuit-level simulations is important for realistic benchmarking of quantum architectures.
+
+The Hidden Markov Pauli channel provides a flexible and computationally efficient framework for incorporating these effects while remaining compatible with stabilizer-based simulators.
+
+\section{Conclusion}
+
+We constructed a Hamiltonian-free model for temporally correlated Pauli noise based on a hidden Markov process. 
+The model captures low-frequency drift in error rates while remaining compatible with stabilizer circuit simulation tools such as Stim.
+
+\bibliographystyle{unsrt}
+
+\begin{thebibliography}{9}
+
+\bibitem{paladino2014}
+E. Paladino, Y. Galperin, G. Falci, and B. Altshuler.
+1/f noise: Implications for solid-state quantum information.
+Reviews of Modern Physics 86, 361 (2014).
+
+\bibitem{macchiavello2002}
+C. Macchiavello and G. Palma.
+Entanglement-enhanced information transmission over a quantum channel with correlated noise.
+Physical Review A 65, 050301 (2002).
+
+\bibitem{novais2007}
+E. Novais, E. Mucciolo, and H. Baranger.
+Surface code threshold in the presence of correlated errors.
+Physical Review Letters 98, 040501 (2007).
+
+\bibitem{ball2016}
+H. Ball, T. Stace, S. Flammia, and M. Biercuk.
+Role of temporal correlations in quantum error correction.
+Physical Review A 93, 022303 (2016).
+
+\bibitem{gidney2021}
+C. Gidney.
+Stim: a fast stabilizer circuit simulator.
+Quantum 5, 497 (2021).
+
+\bibitem{nielsen2000}
+M. Nielsen and I. Chuang.
+Quantum Computation and Quantum Information.
+Cambridge University Press (2000).
+
+\end{thebibliography}
 
 \end{document}

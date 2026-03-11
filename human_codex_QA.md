@@ -173,6 +173,7 @@ A:
    - 报告统一以 trace 口径为主，fast 口径为辅（双口径并列）。
    - 若 20-seed 仍稳定为正，再只做一个小规模横向检查（如 `f=1e3,g=1.6`）验证可迁移性。
 
+### 2026-03-10
 Q: 这个地方我没看懂，是不是比较 `topcond_ablation_fast_vs_trace` 在 `phase6_20260310_confirm40` 和 `phase5_20260309_confirm10` 两个文件中的 error bar？95%CI 半宽具体在哪个图里看出来？
 A:
 1. 你看得很对，比较对象就是这两次 confirm（10 seeds vs 40 seeds）。
@@ -186,3 +187,381 @@ A:
    - confirm40 baseline：fast `32.49% +- 3.91%`，trace `32.74% +- 4.00%`
    - confirm40 long-trace：fast `43.43% +- 3.01%`，trace `44.22% +- 3.94%`
 6. 结论：40 seeds 的 CI 半宽显著缩小（尤其 long-trace fast 从 `+-7.23%` 降到 `+-3.01%`），但均值层面并没有“因为加 seed 而变更强”，而是变得更稳、更可置信。
+
+Q: not for beamer, but how google model the measurement error actually?
+A:
+1. 根据 Google RL-QEC 论文与补充材料（Dec 2025），measurement error 被纳入其“器件表征驱动的 Pauli 模型”中，而不是作为一个单独展开推导的 RL 专用新模型。
+2. 文中明确给出 measurement error 的量级约为 `5×10^-3`（对 `|0>` 与 `|1>` 平均）。
+3. 同时还计入了 readout/reset 期间数据比特 DD 对应的误差分量（约 `6.9×10^-3`）。
+4. 论文没有给出完整测量通道的显式方程（如完整 POVM / confusion-matrix 细节），但说明了该 Pauli 模型可复现实验 detector rate（Fig. S1(c)）。
+
+Q: do they model the measurement error in form of channel?
+A:
+1. 是，但属于“有效电路层”的误差通道表征。
+2. 也就是说，measurement error 作为 Pauli/detector-error workflow 的一部分被建模；论文里没有把它写成独立的一套一阶原理测量通道推导。
+
+Q: any suggestions of modeling the stabilizer measurent error in a form of channel ? any reference did such a job and can be incorporated into our work?
+A:
+1. 推荐分层建模路径（从易到难）：
+   - `Phenomenological readout flip`: `m~ = m xor e`, `e ~ Bernoulli(p_m)`。
+   - `Asymmetric readout channel`: 用 2x2 confusion matrix (`p01`, `p10`) 描述 `|0>` 与 `|1>` 非对称读出。
+   - `Spatially correlated readout`: 以邻近 ancilla 小簇建立联合 assignment model，刻画读出串扰。
+   - `Temporally correlated readout`: 用 HMM/Markov 隐状态驱动 `p_m(t)`，与现有 correlated-noise 框架兼容。
+2. 对我们当前代码的最实用落地顺序：
+   - 先实现 `readout_flip` + `asymmetric_readout`；
+   - 再增量加最近邻簇相关（spatial）和时间相关（temporal）版本。
+3. 参考文献与资料：
+   - Google RL-QEC (arXiv:2511.08493): https://arxiv.org/abs/2511.08493
+   - Stim gate reference (`M(p)`, `MR(p)`): https://github.com/quantumlib/Stim/wiki/Stim-v1.10-Gate-Reference
+   - Stim generated-circuit params (`before_measure_flip_probability`, `after_reset_flip_probability`): https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Python-API-Reference
+   - Fowler et al. 2012 (surface-code circuit-level baseline): https://journals.aps.org/pra/abstract/10.1103/PhysRevA.86.032324
+   - Bravyi et al. (phenomenological readout-focused surface-code analysis): https://quantum-journal.org/papers/q-2023-09-21-1116/
+   - Nation et al. (assignment-matrix readout modeling): https://journals.aps.org/pra/abstract/10.1103/PhysRevA.103.042605
+   - Bravyi et al. (correlated readout mitigation/modeling direction): https://journals.aps.org/prxquantum/abstract/10.1103/PRXQuantum.2.040326
+4. 结论：
+   - Google 的实现语境是“characterization-driven effective channel”；
+   - 对我们来说，先上 assignment-matrix / phenomenological channel 最快，也最容易并入现有 QEC+RL 基线并开展 ablation。
+
+### 2026-03-11
+Q: the whole RL part must be well-defined by some parameters that are customizible, are they ONLY configured by the config.py ? [This is crucial question! 🔥🔥🔥]
+A:
+1. 不是。`code/rl_train/config.py` 只定义了 `PPOConfig` 这个 PPO 侧默认参数容器，例如 `total_timesteps`、`rollout_steps`、`learning_rate`、`hidden_dim`、`seed` 等。
+2. 实际运行时，主要配置入口不是只靠 `config.py`，而是 `code/rl_train/train.py` 里的 CLI 参数。这里暴露了：
+   - PPO 超参数：如 `--total-timesteps`、`--rollout-steps`、`--ppo-learning-rate`、`--ppo-hidden-dim`
+   - 环境/任务参数：如 `--max-steps`
+   - Steane 适配器参数：如 `--steane-n-rounds`、`--steane-shots-per-step`、`--steane-control-mode`、`--steane-noise-channel`
+   - reward 相关参数：如 `--steane-reward-mode`、`--steane-action-penalty-coef`
+3. `train.py` 会把这些 CLI 参数再组装成 `PPOConfig`，所以运行时通常是 **CLI 覆盖** `config.py` 默认值，而不是直接只读 `config.py`。
+4. 除了 `PPOConfig`，Steane 环境本身还有单独的配置数据结构：`code/rl_train/steane_adapter.py` 里的 `SteaneAdapterConfig`。也就是说，R**L 的“可配置参数”分成至少两层**：
+   - PPO/优化器层
+   - simulator / code-family / noise / reward 层
+5. benchmark 入口也有自己的一套参数面：
+   - `code/rl_train/benchmarks/eval_steane_ppo.py`
+   - `code/rl_train/benchmarks/staged_steane_experiments.py`
+   这些脚本除了复用训练参数，还增加了 `trace_finetune`、`post_eval`、分 stage 运行、seed 并行等控制项。
+6. staged benchmark 还支持 JSON 驱动配置，而不需要改 Python：
+   - `--stage-specs-json`
+   - `--base-overrides-json`
+   所以批量实验时，很多 RL 参数实际上是通过 stage-spec / override JSON 注入的。
+7. 准确说法应该是：
+   - `config.py` 只是 PPO 默认参数定义处之一；
+   - 真正的主要配置面是 `train.py` / benchmark scripts 的 CLI；
+   - 更大规模实验还会通过 stage-spec JSON 和 override JSON 配置，而不是只改 `config.py`。
+
+Q: Can you classify the RL parameters into clear groups, so I know where each kind of thing should be configured? [This is crucial question! 🔥🔥🔥]
+A:
+1. 可以。当前这套 RL 配置大致可以分成 5 层：
+   - `PPO / optimizer`
+   - `environment / task protocol`
+   - `noise / simulator physics`
+   - `reward shaping`
+   - `benchmark orchestration / experiment management`
+2. `PPO / optimizer` 层：
+   - 作用：决定 policy/value 网络怎么训练。
+   - 典型参数：`total_timesteps`、`rollout_steps`、`ppo_learning_rate`、`ppo_update_epochs`、`ppo_minibatch_size`、`ppo_ent_coef`、`ppo_hidden_dim`、`ppo_use_layer_norm`、`seed`、`device`
+   - 主要入口：`code/rl_train/config.py` + `code/rl_train/train.py` / `code/rl_train/benchmarks/eval_steane_ppo.py`
+3. `environment / task protocol` 层：
+   - 作用：定义一个 RL episode/step 到底对应什么物理或仿真过程。
+   - 典型参数：`max_steps`、`steane_stepping_mode`、`steane_n_rounds`、`steane_shots_per_step`、`steane_control_mode`、`steane_control_dim`、`steane_n_1q_control_slots`、`steane_n_2q_control_slots`、`steane_syndrome_mode`
+   - 主要入口：`code/rl_train/train.py`、`code/rl_train/steane_adapter.py`
+4. `noise / simulator physics` 层：
+   - 作用：定义漂移、门噪声、idle noise、correlated channel 等物理扰动模型。
+   - 典型参数：`steane_noise_channel`、`steane_drift_period_steps`、`steane_drift_amplitude`、`steane_p1q_base`、`steane_p2q_base`、`steane_sensitivity_1q`、`steane_sensitivity_2q`、`steane_p_clip_max`、`steane_idle_p_total_per_idle`、`steane_channel_corr_f`、`steane_channel_corr_g`、`steane_channel_corr_g_mode`
+   - 主要入口：`code/rl_train/steane_adapter.py`，底层实现进一步落到 `code/quantum_simulation/`
+5. `reward shaping` 层：
+   - 作用：定义 agent 学什么，而不是 simulator 本身怎样演化。
+   - 典型参数：`steane_reward_mode`、`steane_action_penalty_coef`、`steane_miscal_penalty_coef`、`steane_success_bonus_coef`
+   - 主要入口：`code/rl_train/train.py` 里的 `make_steane_reward_fn(...)`
+6. `benchmark orchestration / experiment management` 层：
+   - 作用：不是单次训练本身，而是如何批量跑实验、分阶段、做后评估、trace finetune、保存 JSON。
+   - 典型参数：`post_eval_episodes`、`eval_steane_shots_per_step`、`trace_finetune_timesteps`、`trace_finetune_rollout_steps`、`trace_finetune_shots_per_step`、`trace_eval_episodes`、`save_json`、`stages`、`stage_specs_json`、`base_overrides_json`、`seed_workers`
+   - 主要入口：`code/rl_train/benchmarks/eval_steane_ppo.py`、`code/rl_train/benchmarks/staged_steane_experiments.py`
+7. 最实用的理解方式：
+   - 如果你想改“怎么训练 policy”，先看 PPO 层。
+   - 如果你想改“agent 每一步在控制什么任务”，先看 environment 层。
+   - 如果你想改“噪声/漂移/相关信道长什么样”，先看 noise 层。
+   - 如果你想改“奖励到底鼓励什么”，看 reward 层。
+   - 如果你想批量扫参数、做多 seed / 多 stage 实验，主要看 benchmark orchestration 层。
+8. 所以配置责任应该这样理解：
+   - `config.py` 负责的是 PPO 默认值的一部分；
+   - `train.py` 负责单次训练的大部分可调入口；
+   - `steane_adapter.py` 负责 simulator/task/noise 这层的结构化配置；
+   - `benchmarks/*.py` 负责实验管理层，而不是替代前面三层。
+
+
+
+Q: 我们现在针对 noisy circuit 模拟里各种 error channel，怎么理解每个 channel 的参数物理意义？尤其 correlated noise 里的 `f,g`，如果电路只有 layered 次序、没有真实时间长短，那它们怎么才算 well-defined？[🔥🔥🔥]
+    292 +A:
+    293 +1. 先说总原则：在当前代码里，`f,g` 不是“悬空”的自由符号；它们只有在你先接受一套**时间约定**之后才有物理意义。
+    294 +2. 这个 repo 已经明确写死了一套时间约定，在 `code/quantum_simulation/noise_engine.py`：
+    295 +   - 串行调度（不是并行 layer）
+    296 +   - `1q gate = 10 ns`
+    297 +   - `2q gate = 20 ns`
+    298 +   - `measurement = 100 ns`
+    299 +   - `reset = 100 ns`
+    300 +   - 相邻指令之间固定插入 `idle_ns = 200 ns`
+    301 +3. 因此，当前 noisy-circuit 其实不是“只有顺序、完全没时间”，而是：
+    302 +   - **文本顺序 -> serial timeline**
+    303 +   - **timeline -> 带 ns 单位的 synthetic clock**
+    304 +   - 各种 time-dependent / correlated channel 都是相对于这个 synthetic clock 定义的
+    305 +4. 各 channel 及参数语义：
+    306 +   - `auto`
+    307 +     - 不是独立物理模型，只是兼容层。
+    308 +     - `control_mode=global` 时映射到 `google_global`；`gate_specific` 时映射到 `google_gate_specific`。
+    309 +   - `google_global`
+    310 +     - 物理含义：所有门共享一个全局控制失配标量，失配越大，门 depolarizing rate 越高。
+    311 +     - 关键参数：
+    312 +       - `p_1q_base`, `p_2q_base`: 1q/2q 的 action 无关底噪
+    313 +       - `sensitivity_1q`, `sensitivity_2q`: 控制失配转成门错误率的斜率
+    314 +       - `p_clip_max`: 概率截断上限
+    315 +       - `drift_period_steps`, `drift_amplitude`: 最优控制 `u_opt` 的漂移周期和幅度
+    316 +     - 设定建议：
+    317 +       - `p_base` 先来自你想模拟的器件 baseline gate infidelity
+    318 +       - `sensitivity` 用来控制“错控一点会带来多大额外 gate noise”
+    319 +       - `drift_period_steps` 决定非平稳性快慢；大表示慢漂移
+    320 +   - `google_gate_specific`
+    321 +     - 物理含义：不是所有门共用一个失配，而是每类/每位置门映射到某个 control slot，各自有局部失配。
+    322 +     - 额外参数：
+    323 +       - `n_1q_control_slots`, `n_2q_control_slots`: 1q/2q gate 对应多少个独立控制槽
+    324 +     - 设定建议：
+    325 +       - 想表达“不同门族/不同位置误差可分开校准”时用它
+    326 +       - slot 数越大，自由度越强，但训练更难
+    327 +   - `idle_depolarizing`
+    328 +     - 物理含义：只在 idle window 注入 action 无关的 Pauli idle noise。
+    329 +     - 关键参数：
+    330 +       - `idle_p_total_per_idle`: 每个 idle window 的总非平凡 Pauli 概率
+    331 +       - `idle_px_weight`, `idle_py_weight`, `idle_pz_weight`: X/Y/Z 分配权重
+    332 +     - 设定建议：
+    333 +       - 如果你只想加静态 idle 背景噪声，这是最直接模型
+    334 +       - 若没有方向偏置证据，先设成 `(1,1,1)`
+    335 +   - `parametric_google`
+    336 +     - 物理含义：结构上和 `google_gate_specific` 一样，但把 gate-noise 整体强度交给显式 regime knob 来扫参数。
+    337 +     - 关键参数：
+    338 +       - `channel_regime_a`, `channel_regime_b`
+    339 +     - 代码语义：
+    340 +       - `a` 同时缩放 1q 的 `p_base` 和 `sensitivity`
+    341 +       - `b` 同时缩放 2q 的 `p_base` 和 `sensitivity`
+    342 +     - 设定建议：
+    343 +       - 想做“同一类模型，不同器件 regime / 不同门族强弱”扫描时用它
+    344 +   - `correlated_pauli_noise_channel`
+    345 +     - 物理含义：只在 idle window 注入 temporally correlated Pauli noise；X/Y/Z 各有独立两态 HMM 链，但共享同一个 `(f,g)`。
+    346 +     - 关键参数：
+    347 +       - `channel_corr_f`: 相关频率，控制 hidden state 在相邻 idle window 之间切换多快
+    348 +       - `channel_corr_g`: 强度尺度，控制平均 idle Pauli 强度
+    349 +       - `channel_corr_g_mode`: `per_window` 或 `per_circuit`
+    350 +       - `p_1q_base`, `sensitivity_1q`, `p_clip_max`: 用来先生成目标总强度，再乘上 `g`
+    351 +     - 设定建议：
+    352 +       - `f` 决定 memory time；小 `f` = 慢变化、长相关
+    353 +       - `g` 决定总体噪声强度，不直接决定相关时间
+    354 +       - 若比较不同 circuit 长度，优先用 `per_circuit`
+    355 +   - `composed_google_global_correlated` / `composed_google_gate_specific_correlated`
+    356 +     - 物理含义：门上有 Google-like depolarizing，idle 上有 correlated Pauli，两者一次性组合。
+    357 +     - 参数就是前两类的并集。
+    358 +     - 设定建议：
+    359 +       - 如果你认为器件同时有“门错控 + correlated idle background”，这是最合理的综合模型。
+    360 +5. `f` 在当前实现里的严格含义：
+    361 +   - 它不是直接对“整条 circuit 总时间”起作用，而是先转成**相邻 idle window 的状态翻转概率**。
+    362 +   - 代码里：
+    363 +     - `idle_s = idle_ns * 1e-9`
+    364 +     - `rho = exp(-f * idle_s)`
+    365 +     - `gamma = (1 - rho) / 2`
+    366 +   - 然后 Hidden-Markov telegraph 链每经过一个 idle window，就按 `gamma` 更新一次状态。
+    367 +6. 所以在当前模型下，`f` 的真实解释是：
+    368 +   - 给定固定 `idle_ns` 后，`f` 决定“每个 idle window 之间相关性衰减多快”
+    369 +   - 或者等价地，决定以 ns 计的相关时间常数大约是多少
+    370 +   - 但因为代码只在 idle window 更新状态，所以它最终体现为“每窗口一步”的 Markov 记忆强度
+    371 +7. `g` 在当前实现里的严格含义：
+    372 +   - 先算一个由 control mismatch 给出的 baseline strength：
+    373 +     - `base_strength = p_1q_base + sensitivity_1q * mismatch_global`
+    374 +   - 再乘 `g` 得到目标总 Pauli 强度：
+    375 +     - `p_total_target = clip(base_strength * g, 0, p_clip_max)`
+    376 +   - 所以 `g` 是**强度缩放因子**，不是时间参数。
+    377 +8. 你提到的关键问题是对的：
+    378 +   - 同一个物理过程，如果实验总时长 `T` 不同，那么“低频/高频”“强/弱”这些词本来都依赖时间尺度。
+    379 +   - 如果模拟里完全没有时间标尺，只剩 layer index，那么 `f` 用 Hz 表示其实是不严谨的。
+    380 +9. 但在我们当前代码里，这个问题被下面这一步“封闭”了：
+    381 +   - repo 明确规定了 `GateDurations` 和 `idle_ns`
+    382 +   - 所以 `f` 的 Hz 单位是相对于这套 synthetic time 定义的
+    383 +   - 也就是说，当前问题是 well-defined 的，但**只在这套时间约定下 well-defined**
+    384 +10. 更直白地说：
+    385 +   - 现在的 `f=1e4 Hz` 并不是“真实实验平台上绝对的 10 kHz”
+    386 +   - 它是“在本 repo 规定的 serial+idle=200ns 时间刻度下，对应的 10 kHz telegraph correlation frequency”
+    387 +   - 如果你改了 `idle_ns` 或整体 scheduling 假设，同一个 `f` 的统计意义会变
+    388 +11. `g` 的 well-defined 也依赖你选择的归一化口径：
+    389 +   - `per_window`: `g` 表示每个 idle window 的局部强度缩放
+    390 +   - `per_circuit`: 先把整条 circuit / 一次 simulator step 的总预算固定，再反推每窗口强度
+    391 +   - 所以若 circuit 长度会变，`per_window` 下同一个 `g` 不再对应同样的“整条 circuit 总噪声预算”；这时 `per_circuit` 更合理
+    392 +12. 因此，当前最严谨的结论是：
+    393 +   - `f` 的定义依赖 `GateDurations.idle_ns`
+    394 +   - `g` 的定义依赖你选 `per_window` 还是 `per_circuit`
+    395 +   - 对跨不同电路长度的比较，应优先使用 `per_circuit`
+    396 +   - 对跨不同时间假设的比较，必须固定 `GateDurations`，否则 `(f,g)` 不可直接横比
+    397 +13. 如果你问“怎样才算真正物理上更稳妥”：
+    398 +   - 最低要求：把 `GateDurations` 当成模型的一部分写进实验 protocol，不能默认隐含
+    399 +   - 更进一步：把 `f` 不只写 Hz，还换算成“每 idle window 的 `gamma`”或“相关窗口数 `tau_corr / idle_ns`”
+    400 +   - 最推荐的报告方式是同时记：
+    401 +     - `f_hz`
+    402 +     - `idle_ns`
+    403 +     - `gamma_per_window`
+    404 +     - `corr_windows_per_step`
+    405 +     - `g_mode`
+    406 +14. 实务建议：
+    407 +   - 如果你当前目标是做 repo 内部自洽比较，现有定义已经够用，但必须固定 `GateDurations`
+    408 +   - 如果你要把 `(f,g)` 解释成更接近真实器件的物理参数，就需要先声明 serial timing model 是否合理，以及 `idle_ns` 是否对应你要映射的真实硬件时间
+    409 +15. 一句话总结：
+    410 +   - 在“纯 layer、无时间”的抽象里，`f,g` 本来不够 well-defined；
+    411 +   - 在我们当前 repo 里，它们之所以变得 well-defined，是因为代码已经人为补上了一套 synthetic physical clock；
+    412 +   - 所以它们现在是 **model-defined**, 不是 **hardware-universal**。
+
+Q: 我们现在针对 noisy circuit 模拟里各种 error channel，怎么理解每个 channel 的参数物理意义？尤其 correlated noise 里的 `f,g`，如果电路只有 layered 次序、没有真实时间长短，那它们怎么才算 well-defined？[This is crucial question! 🔥🔥🔥🔥🔥🔥]
+
+A:
+1. 先说总原则：在当前代码里，`f,g` 不是“悬空”的自由符号；它们只有在你先接受一套**时间约定**之后才有物理意义。
+2. 这个 repo 已经明确写死了一套时间约定，在 `code/quantum_simulation/noise_engine.py`：
+   - 串行调度（不是并行 layer）
+   - `1q gate = 10 ns`
+   - `2q gate = 20 ns`
+   - `measurement = 100 ns`
+   - `reset = 100 ns`
+   - 相邻指令之间固定插入 `idle_ns = 200 ns`
+3. 因此，当前 noisy-circuit 其实不是“只有顺序、完全没时间”，而是：
+   - **文本顺序 -> serial timeline**
+   - **timeline -> 带 ns 单位的 synthetic clock**
+   - 各种 time-dependent / correlated channel 都是相对于这个 synthetic clock 定义的
+4. 各 channel 及参数语义：
+   - `auto`
+     - 不是独立物理模型，只是兼容层。
+     - `control_mode=global` 时映射到 `google_global`；`gate_specific` 时映射到 `google_gate_specific`。
+   - `google_global`
+     - 物理含义：所有门共享一个全局控制失配标量，失配越大，门 depolarizing rate 越高。
+     - 关键参数：
+       - `p_1q_base`, `p_2q_base`: 1q/2q 的 action 无关底噪
+       - `sensitivity_1q`, `sensitivity_2q`: 控制失配转成门错误率的斜率
+       - `p_clip_max`: 概率截断上限
+       - `drift_period_steps`, `drift_amplitude`: 最优控制 `u_opt` 的漂移周期和幅度
+     - 设定建议：
+       - `p_base` 先来自你想模拟的器件 baseline gate infidelity
+       - `sensitivity` 用来控制“错控一点会带来多大额外 gate noise”
+       - `drift_period_steps` 决定非平稳性快慢；大表示慢漂移
+   - `google_gate_specific` (🙏🙏🙏)
+     - 物理含义：不是所有门共用一个失配，而是每类/每位置门映射到某个 control slot，各自有局部失配。
+     - 额外参数：
+       - `n_1q_control_slots`, `n_2q_control_slots`: 1q/2q gate 对应多少个独立控制槽
+     - 设定建议：
+       - 想表达“不同门族/不同位置误差可分开校准”时用它
+       - slot 数越大，自由度越强，但训练更难
+   - `idle_depolarizing`
+     - 物理含义：只在 idle window 注入 action 无关的 Pauli idle noise。
+     - 关键参数：
+       - `idle_p_total_per_idle`: 每个 idle window 的总非平凡 Pauli 概率
+       - `idle_px_weight`, `idle_py_weight`, `idle_pz_weight`: X/Y/Z 分配权重
+     - 设定建议：
+       - 如果你只想加静态 idle 背景噪声，这是最直接模型
+       - 若没有方向偏置证据，先设成 `(1,1,1)`
+   - `parametric_google`
+     - 物理含义：结构上和 `google_gate_specific` 一样，但把 gate-noise 整体强度交给显式 regime knob 来扫参数。
+     - 关键参数：
+       - `channel_regime_a`, `channel_regime_b`
+     - 代码语义：
+       - `a` 同时缩放 1q 的 `p_base` 和 `sensitivity`
+       - `b` 同时缩放 2q 的 `p_base` 和 `sensitivity`
+     - 设定建议：
+       - 想做“同一类模型，不同器件 regime / 不同门族强弱”扫描时用它
+   - `correlated_pauli_noise_channel` (🙏🙏🙏)
+     - 物理含义：只在 idle window 注入 temporally correlated Pauli noise；X/Y/Z 各有独立两态 HMM 链，但共享同一个 `(f,g)`。
+     - 关键参数：
+       - `channel_corr_f`: 相关频率，控制 hidden state 在相邻 idle window 之间切换多快
+       - `channel_corr_g`: 强度尺度，控制平均 idle Pauli 强度
+       - `channel_corr_g_mode`: `per_window` 或 `per_circuit`
+       - `p_1q_base`, `sensitivity_1q`, `p_clip_max`: 用来先生成目标总强度，再乘上 `g`
+     - 设定建议：
+       - `f` 决定 memory time；小 `f` = 慢变化、长相关
+       - `g` 决定总体噪声强度，不直接决定相关时间
+       - 若比较不同 circuit 长度，优先用 `per_circuit`
+   - `composed_google_global_correlated` / `composed_google_gate_specific_correlated` (🙏🙏🙏)
+     - 物理含义：门上有 Google-like depolarizing，idle 上有 correlated Pauli，两者一次性组合。
+     - 参数就是前两类的并集。
+     - 设定建议：
+       - 如果你认为器件同时有“门错控 + correlated idle background”，这是最合理的综合模型。
+5. `f` 在当前实现里的严格含义：
+   - 它不是直接对“整条 circuit 总时间”起作用，而是先转成**相邻 idle window 的状态翻转概率**。
+   - 代码里：
+     - `idle_s = idle_ns * 1e-9`
+     - `rho = exp(-f * idle_s)`
+     - `gamma = (1 - rho) / 2`
+   - 然后 Hidden-Markov telegraph 链每经过一个 idle window，就按 `gamma` 更新一次状态。
+6. 所以在当前模型下，`f` 的真实解释是：
+   - 给定固定 `idle_ns` 后，`f` 决定“每个 idle window 之间相关性衰减多快”
+   - 或者等价地，决定以 ns 计的相关时间常数大约是多少
+   - 但因为代码只在 idle window 更新状态，所以它最终体现为“每窗口一步”的 Markov 记忆强度
+7. `g` 在当前实现里的严格含义：
+   - 先算一个由 control mismatch 给出的 baseline strength：
+     - `base_strength = p_1q_base + sensitivity_1q * mismatch_global`
+   - 再乘 `g` 得到目标总 Pauli 强度：
+     - `p_total_target = clip(base_strength * g, 0, p_clip_max)`
+   - 所以 `g` 是**强度缩放因子**，不是时间参数。
+8. 你提到的关键问题是对的：
+   - 同一个物理过程，如果实验总时长 `T` 不同，那么“低频/高频”“强/弱”这些词本来都依赖时间尺度。
+   - 如果模拟里完全没有时间标尺，只剩 layer index，那么 `f` 用 Hz 表示其实是不严谨的。
+9. 但在我们当前代码里，这个问题被下面这一步“封闭”了：
+   - repo 明确规定了 `GateDurations` 和 `idle_ns`
+   - 所以 `f` 的 Hz 单位是相对于这套 synthetic time 定义的
+   - 也就是说，当前问题是 well-defined 的，但**只在这套时间约定下 well-defined**
+10. 更直白地说：
+   - 现在的 `f=1e4 Hz` 并不是“真实实验平台上绝对的 10 kHz”
+   - 它是“在本 repo 规定的 serial+idle=200ns 时间刻度下，对应的 10 kHz telegraph correlation frequency”
+   - 如果你改了 `idle_ns` 或整体 scheduling 假设，同一个 `f` 的统计意义会变
+11. `g` 的 well-defined 也依赖你选择的归一化口径：
+   - `per_window`: `g` 表示每个 idle window 的局部强度缩放
+   - `per_circuit`: 先把整条 circuit / 一次 simulator step 的总预算固定，再反推每窗口强度
+   - 所以若 circuit 长度会变，`per_window` 下同一个 `g` 不再对应同样的“整条 circuit 总噪声预算”；这时 `per_circuit` 更合理
+12. 因此，当前最严谨的结论是：
+   - `f` 的定义依赖 `GateDurations.idle_ns`
+   - `g` 的定义依赖你选 `per_window` 还是 `per_circuit`
+   - 对跨不同电路长度的比较，应优先使用 `per_circuit`
+   - 对跨不同时间假设的比较，必须固定 `GateDurations`，否则 `(f,g)` 不可直接横比
+13. 如果你问“怎样才算真正物理上更稳妥”：
+   - 最低要求：把 `GateDurations` 当成模型的一部分写进实验 protocol，不能默认隐含
+   - 更进一步：把 `f` 不只写 Hz，还换算成“每 idle window 的 `gamma`”或“相关窗口数 `tau_corr / idle_ns`”
+   - 最推荐的报告方式是同时记：
+     - `f_hz`
+     - `idle_ns`
+     - `gamma_per_window`
+     - `corr_windows_per_step`
+     - `g_mode`
+14. 实务建议：
+   - 如果你当前目标是做 repo 内部自洽比较，现有定义已经够用，但必须固定 `GateDurations`
+   - 如果你要把 `(f,g)` 解释成更接近真实器件的物理参数，就需要先声明 serial timing model 是否合理，以及 `idle_ns` 是否对应你要映射的真实硬件时间
+15. 一句话总结：
+   - 在“纯 layer、无时间”的抽象里，`f,g` 本来不够 well-defined；
+   - 在我们当前 repo 里，它们之所以变得 well-defined，是因为代码已经人为补上了一套 synthetic physical clock；
+   - 所以它们现在是 **model-defined**, 不是 **hardware-universal**。
+
+Q: 我们的 simulation circuit 结束后，有没有什么机制统计 circuit 的总时间（把所有 gate、measurement、idle 都算进去）？
+A:
+1. 有底层机制，但目前没有看到一个单独对外暴露的“总时长统计 API”。
+2. 当前代码里，circuit 的时间定义来自 `code/quantum_simulation/noise_engine.py` 的 `TimelineBuilder`：
+   - 它会把 circuit 展开成一串 `OperationEvent`
+   - 每个 event 都带 `start_ns` / `end_ns`
+   - 各类操作时长由 `GateDurations` 给定：
+     - `1q = 10 ns`
+     - `2q = 20 ns`
+     - `measure = 100 ns`
+     - `reset = 100 ns`
+     - `idle = 200 ns`
+3. 在这个模型下，总时长其实是可直接定义的：
+   - `total_time_ns = events[-1].end_ns`（若 `events` 非空）
+   - `active_time_ns = sum(duration_for(inst))`
+   - `idle_time_ns = (len(events)-1) * idle_ns`
+   - 并且 `total_time_ns = active_time_ns + idle_time_ns`
+4. 要特别注意一个实现细节：
+   - `build_events()` 内部在处理每条指令后都会把时间推进一个 `idle_ns`
+   - 但根据文件注释和噪声注入逻辑，**最后一条指令后不算 idle**
+   - 所以真正代表电路结束时间的应当取最后一个 event 的 `end_ns`，而不是内部累计变量的最终值
+5. 这套 timeline 机制已经被实际使用，而不是停留在注释里：
+   - `code/quantum_simulation/steane_code_simulator.py`
+   - `code/rl_train/steane_adapter.py`
+   都会调用 `build_events(...)` 来推导噪声窗口或相关 channel 的归一化窗口数
+6. 所以准确说法是：
+   - 现在“能算总时间”，而且定义已经清楚；
+   - 只是还没有封装成类似 `compute_circuit_total_time_ns(circuit)` 这样的统一 helper / report 字段。

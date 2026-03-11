@@ -21,7 +21,7 @@ from typing import Dict, Literal, Sequence
 import numpy as np
 
 from quantum_simulation.noise_channels import build_steane_rl_noise_model
-from quantum_simulation.noise_engine import GateDurations, TimelineBuilder
+from quantum_simulation.noise_engine import CircuitTimingSummary, GateDurations, TimelineBuilder, summarize_circuit_timing
 from quantum_simulation.steane_code_simulator import (
     STABILIZER_SEQUENCE,
     SteaneQECSimulator,
@@ -146,6 +146,24 @@ class SteaneOnlineSteeringSimulator:
         # Deterministic template-based estimate for correlated-channel
         # circuit-length normalization in per_circuit mode.
         self._timeline_builder = TimelineBuilder(GateDurations())
+        self._durations = GateDurations()
+        self._encoding_timing = summarize_circuit_timing(encoding_circuit(), durations=self._durations)
+        self._prep_timing = summarize_circuit_timing(
+            prepare_stab_eigenstate(self.cfg.initial_state),
+            durations=self._durations,
+        )
+        self._rotate_timing = summarize_circuit_timing(
+            rotate_to_measurement_basis(self.cfg.meas_basis),
+            durations=self._durations,
+        )
+        self._logical_measurement_timing = summarize_circuit_timing(
+            measure_logical_qubits(),
+            durations=self._durations,
+        )
+        self._stabilizer_timing = tuple(
+            summarize_circuit_timing(measure_single_stabilizer(stab, ancilla=8), durations=self._durations)
+            for stab in STABILIZER_SEQUENCE
+        )
         self._stabilizer_noise_windows = tuple(
             self._noise_windows_for_circuit(measure_single_stabilizer(stab, ancilla=8))
             for stab in STABILIZER_SEQUENCE
@@ -157,6 +175,7 @@ class SteaneOnlineSteeringSimulator:
             + self._noise_windows_for_circuit(measure_logical_qubits())
         )
         self._noise_windows_cache: Dict[int, int] = {}
+        self._timing_cache: Dict[int, CircuitTimingSummary] = {}
 
     @property
     def obs_dim(self) -> int:
@@ -254,6 +273,78 @@ class SteaneOnlineSteeringSimulator:
         self._noise_windows_cache[n_steps_i] = int(total)
         return int(total)
 
+    def _estimated_timing_per_shot(self, n_steps: int) -> CircuitTimingSummary:
+        """Return nominal one-shot circuit timing for the current step length.
+
+        This estimate assumes:
+          - one successful state-preparation attempt
+          - no extra idle windows between sub-circuit API calls
+        Actual runtime can be longer when preparation retries occur.
+        """
+        n_steps_i = int(n_steps)
+        if n_steps_i < 0:
+            raise ValueError(f"n_steps must be non-negative, got {n_steps}")
+        cached = self._timing_cache.get(n_steps_i)
+        if cached is not None:
+            return cached
+
+        total_time = (
+            self._encoding_timing.total_time_ns
+            + self._prep_timing.total_time_ns
+            + self._rotate_timing.total_time_ns
+            + self._logical_measurement_timing.total_time_ns
+        )
+        active_time = (
+            self._encoding_timing.active_time_ns
+            + self._prep_timing.active_time_ns
+            + self._rotate_timing.active_time_ns
+            + self._logical_measurement_timing.active_time_ns
+        )
+        idle_time = (
+            self._encoding_timing.idle_time_ns
+            + self._prep_timing.idle_time_ns
+            + self._rotate_timing.idle_time_ns
+            + self._logical_measurement_timing.idle_time_ns
+        )
+        n_operations = (
+            self._encoding_timing.n_operations
+            + self._prep_timing.n_operations
+            + self._rotate_timing.n_operations
+            + self._logical_measurement_timing.n_operations
+        )
+        n_idle_windows = (
+            self._encoding_timing.n_idle_windows
+            + self._prep_timing.n_idle_windows
+            + self._rotate_timing.n_idle_windows
+            + self._logical_measurement_timing.n_idle_windows
+        )
+
+        stab_count = len(self._stabilizer_timing)
+        for i in range(n_steps_i):
+            summary = self._stabilizer_timing[i % stab_count]
+            total_time += summary.total_time_ns
+            active_time += summary.active_time_ns
+            idle_time += summary.idle_time_ns
+            n_operations += summary.n_operations
+            n_idle_windows += summary.n_idle_windows
+
+        out = CircuitTimingSummary(
+            total_time_ns=float(total_time),
+            active_time_ns=float(active_time),
+            idle_time_ns=float(idle_time),
+            n_operations=int(n_operations),
+            n_idle_windows=int(n_idle_windows),
+        )
+        self._timing_cache[n_steps_i] = out
+        return out
+
+    def estimated_step_timing(self, n_rounds_eval: int | None = None) -> CircuitTimingSummary:
+        """Return nominal timing summary for one RL step under current config."""
+        rounds = self._rounds_this_step() if n_rounds_eval is None else int(n_rounds_eval)
+        if rounds < 0:
+            raise ValueError(f"n_rounds_eval must be non-negative, got {n_rounds_eval}")
+        return self._estimated_timing_per_shot(n_steps=int(rounds) * 6)
+
     def _progress(self) -> float:
         """Episode progress in [0,1] for online-round mode; 0 otherwise."""
         if self.cfg.stepping_mode != "online_rounds":
@@ -284,6 +375,7 @@ class SteaneOnlineSteeringSimulator:
         n_rounds_eval = self._rounds_this_step()
         n_steps = int(n_rounds_eval) * 6
         corr_windows_per_shot_est = self._estimated_noise_windows_per_shot(n_steps=n_steps)
+        timing_per_shot_est = self._estimated_timing_per_shot(n_steps=n_steps)
 
         optimal = self._optimal_control(self._t)
         optimal_fn = partial(
@@ -389,6 +481,13 @@ class SteaneOnlineSteeringSimulator:
             "shots": int(self.cfg.shots_per_step),
             "shot_workers": int(self.cfg.shot_workers),
             "effective_shot_workers": int(effective_shot_workers),
+            "circuit_total_time_ns_nominal": float(timing_per_shot_est.total_time_ns),
+            "circuit_active_time_ns_nominal": float(timing_per_shot_est.active_time_ns),
+            "circuit_idle_time_ns_nominal": float(timing_per_shot_est.idle_time_ns),
+            "circuit_n_operations_nominal": int(timing_per_shot_est.n_operations),
+            "circuit_n_idle_windows_nominal": int(timing_per_shot_est.n_idle_windows),
+            "timing_idle_ns": float(self._durations.idle_ns),
+            "timing_assumes_single_prep_attempt": 1,
             "collect_traces": bool(self.cfg.collect_traces),
             "metrics_source": metrics_source,
             "action_norm_l2": float(np.linalg.norm(action)),

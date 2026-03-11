@@ -64,6 +64,17 @@ class GateDurations:
     idle_ns: float = 200.0     #ns
 
 
+@dataclass(frozen=True)
+class CircuitTimingSummary:
+    """Timing summary for one circuit under the serial scheduling model."""
+
+    total_time_ns: float
+    active_time_ns: float
+    idle_time_ns: float
+    n_operations: int
+    n_idle_windows: int
+
+
 @dataclass
 class OperationEvent:
     """A single operation projected onto the serial timeline."""
@@ -250,6 +261,43 @@ class TimelineBuilder:
             # Serial schedule: next op starts after fixed idle.
             t = end + float(self.durations.idle_ns)
         return events
+
+
+def summarize_circuit_timing(
+    circuit: stim.Circuit,
+    durations: Optional[GateDurations] = None,
+) -> CircuitTimingSummary:
+    """Summarize circuit timing under the serial schedule used by the noise engine.
+
+    Semantics:
+      - active time includes gate / measurement / reset durations only
+      - idle time includes one fixed idle window between consecutive instructions
+      - no idle is counted before the first instruction or after the last
+    """
+    timeline_builder = TimelineBuilder(durations if durations is not None else GateDurations())
+    events = timeline_builder.build_events(circuit)
+    if not events:
+        return CircuitTimingSummary(
+            total_time_ns=0.0,
+            active_time_ns=0.0,
+            idle_time_ns=0.0,
+            n_operations=0,
+            n_idle_windows=0,
+        )
+
+    active_time = 0.0
+    for ev in events:
+        active_time += float(ev.end_ns - ev.start_ns)
+    n_idle_windows = max(0, len(events) - 1)
+    idle_time = float(n_idle_windows) * float(timeline_builder.durations.idle_ns)
+    total_time = float(events[-1].end_ns)
+    return CircuitTimingSummary(
+        total_time_ns=total_time,
+        active_time_ns=active_time,
+        idle_time_ns=idle_time,
+        n_operations=len(events),
+        n_idle_windows=n_idle_windows,
+    )
 
 
 def integrate_rate(

@@ -336,6 +336,8 @@ def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         steane_cfg = ft_steane_cfg
         cfg = trace_ft_cfg
 
+    step_timing = simulator.estimated_step_timing() if history_trace is None else ft_simulator.estimated_step_timing()
+
     eval_metrics = _evaluate_policies(
         model=model,
         cfg=cfg,
@@ -369,6 +371,14 @@ def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         "args": vars(args),
         "steane_cfg": asdict(steane_cfg),
         "ppo_cfg": asdict(cfg),
+        "nominal_circuit_timing_per_rl_step": {
+            "total_time_ns": float(step_timing.total_time_ns),
+            "active_time_ns": float(step_timing.active_time_ns),
+            "idle_time_ns": float(step_timing.idle_time_ns),
+            "n_operations": int(step_timing.n_operations),
+            "n_idle_windows": int(step_timing.n_idle_windows),
+            "assumes_single_prep_attempt": True,
+        },
         "phase1_mean_rollout_reward": float(history_phase1["mean_reward_rollout"][-1]),
         "trace_finetune_enabled": bool(history_trace is not None),
         "trace_finetune_ppo_cfg": asdict(trace_ft_cfg) if trace_ft_cfg is not None else None,
