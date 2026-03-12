@@ -32,63 +32,51 @@ The circuit-level picture is:
 
 At the bottom of the figure, the effective per-step dynamics are:
 
-\[
-\rho_{j+1} = \mathcal{N}_j\!\left(\mathcal{M}_j\!\left(\mathcal{G}_j\!\left(U_j(\rho_j)\right)\right)\right)
-\]
+```text
+ρ_(j+1) = N_j(M_j(G_j(U_j(ρ_j))))
+```
 
 where:
 
-- \(U_j\): intended noiseless control operation
-- \(\mathcal{G}_j\): RL-controlled gate-calibration layer
-- \(\mathcal{M}_j\): measurement-error overlay
-- \(\mathcal{N}_j\): stochastic noise channel, including correlated components
+- `U_j`: intended noiseless control operation
+- `G_j`: RL-controlled gate-calibration layer
+- `M_j`: measurement-error overlay
+- `N_j`: stochastic noise channel, including correlated components
 
 The main channel families used in the current experiments are:
 
-\[
-\rho_{j+1} = \mathcal{N}^{\text{gate}}_j\!\left(U_j(\rho_j)\right)
-\]
+```text
+ρ_(j+1) = N_j^(gate)(U_j(ρ_j))
+```
 
 Google-like gate noise:
 
 - depolarizing gate noise driven by control mismatch
 - physical meaning: imperfect gate calibration and drift-sensitive control
 
-\[
-\rho_{j+1} = \mathcal{N}^{\text{corr-idle}}_j\!\left(U_j(\rho_j)\right)
-\]
+```text
+ρ_(j+1) = N_j^(corr-idle)(U_j(ρ_j))
+```
 
 Correlated idle noise:
 
-- hidden-Markov / telegraph-like idle Pauli process with parameters \((f, g)\)
+- hidden-Markov / telegraph-like idle Pauli process with parameters `(f, g)`
 - physical meaning:
-  - \(f\): temporal correlation rate
-  - \(g\): correlated idle-noise strength
+  - `f`: temporal correlation rate
+  - `g`: correlated idle-noise strength
 
-\[
-\rho_{j+1}
-=
-\mathcal{N}^{\text{corr-idle}}_j
-\circ
-\mathcal{N}^{\text{gate}}_j
-\left(U_j(\rho_j)\right)
-\]
+```text
+ρ_(j+1) = N_j^(corr-idle) ∘ N_j^(gate)(U_j(ρ_j))
+```
 
 Composite channel:
 
 - gate noise plus correlated idle noise
 - physical meaning: simultaneous calibration-sensitive gates and time-correlated idle errors
 
-\[
-\rho_{j+1}
-=
-\mathcal{M}^{\text{meas}}_j
-\circ
-\mathcal{N}^{\text{corr-idle}}_j
-\circ
-\mathcal{N}^{\text{gate}}_j
-\left(U_j(\rho_j)\right)
-\]
+```text
+ρ_(j+1) = M_j^(meas) ∘ N_j^(corr-idle) ∘ N_j^(gate)(U_j(ρ_j))
+```
 
 Full composite:
 
