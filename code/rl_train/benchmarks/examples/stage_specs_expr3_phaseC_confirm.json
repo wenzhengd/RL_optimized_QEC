@@ -1,0 +1,33 @@
+{
+  "stages": {
+    "C1": {
+      "name": "expr3c_confirm_p001_f1e2_g16",
+      "description": "Experiment 3 Phase C confirm: full composite final condition p_meas=0.01, f=1e2 Hz, g=1.6.",
+      "seed_list": [1220, 1221, 1222, 1223, 1224, 1225, 1226, 1227, 1228, 1229, 1230, 1231, 1232, 1233, 1234, 1235, 1236, 1237, 1238, 1239],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "steane_noise_channel": "composed_google_gate_specific_correlated",
+        "steane_channel_corr_f": 100.0,
+        "steane_channel_corr_g": 1.6,
+        "steane_channel_corr_g_mode": "per_circuit",
+        "steane_measurement_bitflip_prob": 0.01,
+        "total_timesteps": 1024,
+        "rollout_steps": 32,
+        "steane_n_rounds": 6,
+        "steane_shots_per_step": 6,
+        "trace_finetune_timesteps": 192,
+        "trace_finetune_rollout_steps": 16,
+        "trace_finetune_shots_per_step": 12,
+        "trace_finetune_n_rounds": 6,
+        "post_eval_episodes": 32,
+        "eval_steane_shots_per_step": 64,
+        "trace_eval_episodes": 8,
+        "trace_eval_steane_shots_per_step": 32,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false
+      }
+    }
+  }
+}

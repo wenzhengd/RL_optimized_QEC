@@ -1,0 +1,136 @@
+{
+  "stages": {
+    "1": {
+      "name": "expr1a_ratio_1to4_scale_05",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 1/4, overall scale 0.5.",
+      "seed_list": [410, 411, 412, 413, 414],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 0.5,
+        "steane_channel_regime_b": 2.0,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    },
+    "2": {
+      "name": "expr1a_ratio_1to4_scale_10",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 1/4, overall scale 1.0.",
+      "seed_list": [420, 421, 422, 423, 424],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 1.0,
+        "steane_channel_regime_b": 4.0,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    },
+    "3": {
+      "name": "expr1a_ratio_1to4_scale_15",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 1/4, overall scale 1.5.",
+      "seed_list": [430, 431, 432, 433, 434],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 1.5,
+        "steane_channel_regime_b": 6.0,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    },
+    "4": {
+      "name": "expr1a_ratio_4to1_scale_05",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 4/1, overall scale 0.5.",
+      "seed_list": [440, 441, 442, 443, 444],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 2.0,
+        "steane_channel_regime_b": 0.5,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    },
+    "5": {
+      "name": "expr1a_ratio_4to1_scale_10",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 4/1, overall scale 1.0.",
+      "seed_list": [450, 451, 452, 453, 454],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 4.0,
+        "steane_channel_regime_b": 1.0,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    },
+    "6": {
+      "name": "expr1a_ratio_4to1_scale_15",
+      "description": "Experiment 1 Phase A quick scan: gate-only, ratio 1q/2q = 4/1, overall scale 1.5.",
+      "seed_list": [460, 461, 462, 463, 464],
+      "overrides": {
+        "google_paper_ppo_preset": false,
+        "code_family": "steane",
+        "device": "cpu",
+        "total_timesteps": 512,
+        "rollout_steps": 32,
+        "steane_n_rounds": 4,
+        "steane_shots_per_step": 4,
+        "post_eval_episodes": 8,
+        "eval_steane_shots_per_step": 24,
+        "steane_shot_workers": 1,
+        "steane_collect_traces": false,
+        "steane_noise_channel": "google_gate_specific",
+        "steane_channel_regime_a": 6.0,
+        "steane_channel_regime_b": 1.5,
+        "steane_measurement_bitflip_prob": 0.0
+      }
+    }
+  }
+}
