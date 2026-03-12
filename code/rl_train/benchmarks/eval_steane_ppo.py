@@ -28,8 +28,8 @@ from ..train import (
 )
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """CLI options for Steane PPO benchmark runs."""
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build CLI parser for Steane PPO benchmark runs."""
     parser = argparse.ArgumentParser(description="Benchmark PPO performance on Steane RL environment.")
 
     # Preset and runtime controls.
@@ -197,7 +197,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--steane-miscal-penalty-coef", type=float, default=0.0)
     parser.add_argument("--steane-success-bonus-coef", type=float, default=0.0)
 
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """CLI options for Steane PPO benchmark runs."""
+    return build_arg_parser().parse_args(argv)
 
 
 def _build_steane_components(

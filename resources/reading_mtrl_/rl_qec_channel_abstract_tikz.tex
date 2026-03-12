@@ -15,20 +15,29 @@
 \definecolor{NFill}{HTML}{E8A3A3}
 \definecolor{GStroke}{HTML}{4D2C91}
 \definecolor{GFill}{HTML}{BFA8E8}
+\definecolor{MStroke}{HTML}{B86A2A}
+\definecolor{MFill}{HTML}{F6D7B8}
 
 \begin{document}
 \begin{tikzpicture}[
   x=1cm,y=1cm,
   >=Latex,
   font=\small,
-  wire/.style={line width=1.4pt,draw=black},
+  wire/.style={line width=0.55pt,draw=black},
   ublock/.style={draw=UStroke,fill=UFill,line width=0.9pt,rounded corners=2pt,minimum width=0.75cm,minimum height=1.35cm,inner sep=0pt},
   gblock/.style={draw=GStroke,fill=GFill,line width=0.9pt,rounded corners=2pt,minimum width=0.75cm,minimum height=1.35cm,inner sep=0pt},
+  mblock/.style={draw=MStroke,fill=MFill,line width=0.8pt,rounded corners=1pt,minimum width=0.22cm,minimum height=0.24cm,inner sep=0pt},
   ncorr/.style={draw=NStroke,fill=NFill,line width=0.9pt,line join=round}
 ]
 
+\newcommand{\timeline}[1]{%
+  \draw[wire] (0,{#1-0.40}) -- (12.2,{#1-0.40});
+  \draw[wire] (0,{#1}) -- (12.2,{#1});
+  \draw[wire] (0,{#1+0.40}) -- (12.2,{#1+0.40});
+}
+
 % ---------------- Row 1: noiseless ----------------
-\draw[wire] (0,3.2) -- (12.2,3.2);
+\timeline{3.2}
 \node[ublock] (u11) at (1.2,3.2) {$U_1$};
 \node[ublock] (u12) at (5.0,3.2) {$U_2$};
 \node[ublock] (u13) at (8.8,3.2) {$U_3$};
@@ -36,7 +45,7 @@
 \node[align=left] at (8.4,4.35) {noiseless: $\rho_{j+1}=U_j(\rho_j)$};
 
 % ---------------- Row 2: noisy ----------------
-\draw[wire] (0,0.0) -- (12.2,0.0);
+\timeline{0.0}
 \node[ublock] (u21) at (1.2,0.0) {$U_1$};
 \coordinate (n21) at (3.1,0.0);
 \node[ublock] (u22) at (5.0,0.0) {$U_2$};
@@ -80,9 +89,24 @@
 \node at (n23) {$\mathcal N_3$};
 
 % ---------------- Row 3: RL-optimized ----------------
-\draw[wire] (0,-3.4) -- (12.2,-3.4);
+\timeline{-3.4}
 \node[ublock] (u31) at (1.2,-3.4) {$U_1$};
-\node[gblock] (g31) at (2.15,-3.4) {};
+\coordinate (g31) at (2.15,-3.4);
+\path[fill=GFill,draw=none,rounded corners=2pt]
+  ([xshift=-0.375cm,yshift=-0.675cm]g31.center) --
+  ([xshift=-0.375cm,yshift=0.675cm]g31.center) --
+  ([xshift=0.375cm,yshift=0.675cm]g31.center) --
+  ([xshift=0.375cm,yshift=-0.12cm]g31.center) --
+  ([xshift=-0.0075cm,yshift=-0.12cm]g31.center) --
+  ([xshift=-0.0075cm,yshift=-0.675cm]g31.center) -- cycle;
+\draw[GStroke,line width=0.9pt,rounded corners=2pt]
+  ([xshift=-0.375cm,yshift=-0.675cm]g31.center) --
+  ([xshift=-0.375cm,yshift=0.675cm]g31.center) --
+  ([xshift=0.375cm,yshift=0.675cm]g31.center) --
+  ([xshift=0.375cm,yshift=-0.12cm]g31.center) --
+  ([xshift=-0.0075cm,yshift=-0.12cm]g31.center) --
+  ([xshift=-0.0075cm,yshift=-0.675cm]g31.center) -- cycle;
+\node[mblock] (m31) at ($(g31.center)+(0.18,-0.40)$) {$\mathcal M_1$};
 \node at ($(g31.center)+(0,0.20)$) {$\mathcal G_1$};
 \node at ($(g31.center)+(0,-0.23)$) {\gear};
 \coordinate (n31) at (3.1,-3.4);
@@ -92,7 +116,22 @@
 \node at ($(g32.center)+(0,-0.23)$) {\gear};
 \coordinate (n32) at (6.9,-3.4);
 \node[ublock] (u33) at (8.8,-3.4) {$U_3$};
-\node[gblock] (g33) at (9.75,-3.4) {};
+\coordinate (g33) at (9.75,-3.4);
+\path[fill=GFill,draw=none,rounded corners=2pt]
+  ([xshift=-0.375cm,yshift=-0.675cm]g33.center) --
+  ([xshift=-0.375cm,yshift=0.675cm]g33.center) --
+  ([xshift=0.375cm,yshift=0.675cm]g33.center) --
+  ([xshift=0.375cm,yshift=-0.12cm]g33.center) --
+  ([xshift=-0.0075cm,yshift=-0.12cm]g33.center) --
+  ([xshift=-0.0075cm,yshift=-0.675cm]g33.center) -- cycle;
+\draw[GStroke,line width=0.9pt,rounded corners=2pt]
+  ([xshift=-0.375cm,yshift=-0.675cm]g33.center) --
+  ([xshift=-0.375cm,yshift=0.675cm]g33.center) --
+  ([xshift=0.375cm,yshift=0.675cm]g33.center) --
+  ([xshift=0.375cm,yshift=-0.12cm]g33.center) --
+  ([xshift=-0.0075cm,yshift=-0.12cm]g33.center) --
+  ([xshift=-0.0075cm,yshift=-0.675cm]g33.center) -- cycle;
+\node[mblock] (m33) at ($(g33.center)+(0.18,-0.40)$) {$\mathcal M_3$};
 \node at ($(g33.center)+(0,0.20)$) {$\mathcal G_3$};
 \node at ($(g33.center)+(0,-0.23)$) {\gear};
 \coordinate (n33) at (10.7,-3.4);
@@ -138,7 +177,7 @@
 \node at (n33) {$\mathcal N_3$};
 \node[text=NStroke] at ($(n32.north)+(0,1.25)$) {correlated noise $\{\mathcal N_j\}_{j=1}^N$};
 
-\node[align=left] at (8.35,-5.4) {$\rho_{j+1}=\mathcal N_j\!\left(\mathcal G_j\!\left(U_j(\rho_j)\right)\right)$};
+\node[align=left] at (8.35,-5.4) {$\rho_{j+1}=\mathcal N_j\!\left(\mathcal M_j\!\left(\mathcal G_j\!\left(U_j(\rho_j)\right)\right)\right)$};
 
 \end{tikzpicture}
 \end{document}

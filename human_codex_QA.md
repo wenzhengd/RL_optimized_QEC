@@ -602,3 +602,52 @@ A:
    - measurement error 会带来**可见但不大的**额外 runtime；
    - 当前实现下，它不是 correlated channel 那种大 bottleneck；
    - 对这个代表性 composite 配置来说，可以把它理解成“大约 10% 出头”的额外成本，而不是数量级变慢。
+
+Q: 目前 Steane simulation 里，6 个 stabilizers 和 `n_rounds / n_steps / RL step` 的关系是什么？`n_rounds` 现在一般怎么设定？`data_generated` 里其他实验用了多少 `n_rounds`？
+A:
+1. 先把三个量分开：
+   - `n_stab = 6`
+   - `n_steps = 6 * n_rounds`
+   - 但 `RL step` 不一定等于一个 stabilizer step
+2. 对一次 memory simulation 而言，`n_steps = 6 * n_rounds` 是对的。
+   - 代码和 README 都明确把 Steane 映射写成：
+     - `n_stab = 6`
+     - `n_steps = 6 * n_rounds`
+   - simulator 里也是按 `step % 6` 轮转这 6 个 stabilizer
+3. 真正容易混淆的是 RL 这一层，因为 adapter 支持两种 stepping mode：（🙏🙏🙏🙏）
+   - `candidate_eval`：
+     - 每个 RL step 跑一个完整的 `n_rounds` memory experiment
+     - 所以此时 `1 RL step = 6 * n_rounds` 个 stabilizer steps
+   - `online_rounds`：
+     - 每个 RL step 只跑 `1 round = 6` 个 stabilizer steps
+     - 整个 episode 一共跑 `n_rounds` 个 RL steps
+4. 代码实现上就是：
+   - `candidate_eval -> n_rounds_eval = cfg.n_rounds`
+   - `online_rounds -> n_rounds_eval = 1`
+   - 然后统一用 `n_steps = 6 * n_rounds_eval`
+5. 所以最准确的说法是：
+   - “因为有 6 个 stabilizers，所以 `n_steps = 6 * n_rounds`”是对的；
+   - 但“`n_rounds * 6 = RL n_steps`”只有在你先说明是在一次 simulator memory experiment 内部，或者当前用的是 `candidate_eval` 时才严格准确
+6. 当前 RL / benchmark 实际主流口径基本是 `candidate_eval`，因此现实里通常就是：
+   - `1 RL step = 1 次完整 memory experiment = 6 * n_rounds` 个 stabilizer steps
+7. `n_rounds` 的默认/预设来源：
+   - `SteaneAdapterConfig` 默认：`n_rounds = 10`
+   - `train.py` 的 paper-style preset 会改成：`steane_n_rounds = 25`
+   - 但最近大多数实际 benchmark / staged run 并没有用 25，而是被 stage specs 覆盖
+8. `data_generated` 里现有实验的主流取值很集中：
+   - `n_rounds = 4`
+     - 主要用于 quick / calibration / power / trace-finetune 这类较轻量阶段
+   - `n_rounds = 6`
+     - 是目前大多数 composite / pilot / confirm / scale / architecture-tuning runs 的主流设定
+   - `n_rounds = 1`
+     - 只在少数 parametric example spec 里出现，属于最小示例，不是主实验口径
+9. 更具体地说：
+   - quick / calibration 常见 `n_rounds = 4`
+   - 更正式的 composite / confirm / scale 常见 `n_rounds = 6`
+   - 所以如果现在问“近期 `data_generated` 的主流 `n_rounds` 是多少”，答案应是：
+     - 轻量扫描常用 `4`
+     - 主力实验常用 `6`
+10. 这一点背后的更重要问题不是乘 6 本身，而是：
+   - `n_rounds` 到底被当成 memory depth / noise accumulation depth，
+   - 还是仅仅被当成一个计算预算旋钮。
+   后面做新实验时，这个解释口径必须先固定。
