@@ -27,9 +27,23 @@ def _load_stage_rows(summary_path: Path) -> list[dict[str, Any]]:
                 "p_meas": float(cfg.get("steane_measurement_bitflip_prob", 0.0)),
                 "improve_ler_mean": float(agg.get("improvement_vs_fixed_zero", {}).get("ler_proxy_mean", float("nan"))),
                 "learned_success_mean": float(agg.get("learned_policy", {}).get("success_rate_mean", float("nan"))),
+                "fixed_zero_success_mean": _aggregate_fixed_zero_success(summary_path.parent / stage_name),
             }
         )
     return rows
+
+
+def _aggregate_fixed_zero_success(stage_dir: Path) -> float:
+    vals: list[float] = []
+    for path in sorted(stage_dir.glob("seed_*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        fixed_zero = payload.get("eval_metrics", {}).get("fixed_zero", {})
+        success_rate = fixed_zero.get("success_rate")
+        if success_rate is not None:
+            vals.append(float(success_rate))
+    if not vals:
+        return float("nan")
+    return float(np.mean(np.asarray(vals, dtype=float)))
 
 
 def _aggregate_cycle_files(files: list[Path]) -> dict[tuple[str, int], tuple[float, float]]:
@@ -55,19 +69,45 @@ def _plot_expr1_phasea(rows: list[dict[str, Any]], out_path: Path) -> None:
         ("1q/2q = 1/4", lambda r: abs((r["regime_b"] / max(r["regime_a"], 1e-12)) - 4.0) < 1e-9, "regime_a"),
         ("1q/2q = 4/1", lambda r: abs((r["regime_a"] / max(r["regime_b"], 1e-12)) - 4.0) < 1e-9, "regime_b"),
     ]
+    abs_colors = {"learned": "#2a9d8f", "fixed_zero": "#b08968"}
+    rel_color = "#d62828"
     for ax, (title, pred, xkey) in zip(axes, specs):
         subset = sorted([r for r in rows if pred(r)], key=lambda r: float(r[xkey]))
-        xs = [float(r[xkey]) for r in subset]
-        succ = [100.0 * float(r["learned_success_mean"]) for r in subset]
-        imp = [100.0 * float(r["improve_ler_mean"]) for r in subset]
-        ax.plot(xs, succ, marker="o", linewidth=2.0, label="learned success (%)")
-        ax.plot(xs, imp, marker="s", linewidth=2.0, label="improve(LER~) (%)")
-        ax.axhline(0.0, color="black", linewidth=0.8, alpha=0.5)
+        xpos = np.arange(len(subset), dtype=float)
+        width = 0.34
+        learned = [100.0 * float(r["learned_success_mean"]) for r in subset]
+        fixed_zero = [100.0 * float(r["fixed_zero_success_mean"]) for r in subset]
+        improve = [100.0 * float(r["improve_ler_mean"]) for r in subset]
+        tick_labels = [f"{float(r[xkey]):g}" for r in subset]
+
+        ax.bar(xpos - width / 2.0, learned, width=width, color=abs_colors["learned"], label="learned success")
+        ax.bar(xpos + width / 2.0, fixed_zero, width=width, color=abs_colors["fixed_zero"], label="fixed_zero success")
+        ax.set_xticks(xpos)
+        ax.set_xticklabels(tick_labels)
         ax.set_title(title)
         ax.set_xlabel("overall gate-noise scale")
-        ax.grid(alpha=0.25, linestyle="--")
-    axes[0].set_ylabel("percent")
-    axes[1].legend(loc="best")
+        ax.set_ylabel("absolute success rate (%)", color="#264653")
+        ax.tick_params(axis="y", labelcolor="#264653")
+        ax.grid(axis="y", alpha=0.25, linestyle="--")
+
+        ax_rel = ax.twinx()
+        ax_rel.plot(
+            xpos,
+            improve,
+            marker="o",
+            markersize=6.0,
+            linewidth=2.2,
+            color=rel_color,
+            label="improvement vs fixed_zero (LER~)",
+        )
+        ax_rel.axhline(0.0, color=rel_color, linewidth=0.9, alpha=0.45, linestyle=":")
+        ax_rel.set_ylabel("relative improve(LER~) (%)", color=rel_color)
+        ax_rel.tick_params(axis="y", labelcolor=rel_color)
+
+        if ax is axes[1]:
+            handles_abs, labels_abs = ax.get_legend_handles_labels()
+            handles_rel, labels_rel = ax_rel.get_legend_handles_labels()
+            ax.legend(handles_abs + handles_rel, labels_abs + labels_rel, loc="best")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
