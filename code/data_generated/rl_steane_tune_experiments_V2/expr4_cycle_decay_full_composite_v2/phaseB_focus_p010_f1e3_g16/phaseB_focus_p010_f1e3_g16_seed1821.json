@@ -1,0 +1,1182 @@
+{
+  "cycle_rounds": [
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50
+  ],
+  "fixed_zero_policy": {
+    "cycle_sweep": [
+      {
+        "fixed_zero": {
+          "detector_rate": 0.055989583333333336,
+          "ler_proxy": 0.05598958333333337,
+          "logical_observable_proxy": 0.8880208333333333,
+          "success_rate": 0.9440104166666666
+        },
+        "n_rounds": 5,
+        "n_steps": 30,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 7130.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 18400.0,
+          "n_idle_windows": 92,
+          "n_operations": 124,
+          "total_time_ns": 25530.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.09016927083333333,
+          "ler_proxy": 0.09016927083333337,
+          "logical_observable_proxy": 0.8196614583333333,
+          "success_rate": 0.9098307291666666
+        },
+        "n_rounds": 10,
+        "n_steps": 60,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 14030.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 36400.0,
+          "n_idle_windows": 182,
+          "n_operations": 244,
+          "total_time_ns": 50430.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.11946614583333333,
+          "ler_proxy": 0.11946614583333337,
+          "logical_observable_proxy": 0.7610677083333333,
+          "success_rate": 0.8805338541666666
+        },
+        "n_rounds": 15,
+        "n_steps": 90,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 20930.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 54400.0,
+          "n_idle_windows": 272,
+          "n_operations": 364,
+          "total_time_ns": 75330.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.15755208333333334,
+          "ler_proxy": 0.15755208333333337,
+          "logical_observable_proxy": 0.6848958333333333,
+          "success_rate": 0.8424479166666666
+        },
+        "n_rounds": 20,
+        "n_steps": 120,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 27830.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 72400.0,
+          "n_idle_windows": 362,
+          "n_operations": 484,
+          "total_time_ns": 100230.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.20345052083333334,
+          "ler_proxy": 0.20345052083333337,
+          "logical_observable_proxy": 0.5930989583333333,
+          "success_rate": 0.7965494791666666
+        },
+        "n_rounds": 25,
+        "n_steps": 150,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 34730.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 90400.0,
+          "n_idle_windows": 452,
+          "n_operations": 604,
+          "total_time_ns": 125130.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2255859375,
+          "ler_proxy": 0.2255859375,
+          "logical_observable_proxy": 0.548828125,
+          "success_rate": 0.7744140625
+        },
+        "n_rounds": 30,
+        "n_steps": 180,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 41630.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 108400.0,
+          "n_idle_windows": 542,
+          "n_operations": 724,
+          "total_time_ns": 150030.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2552083333333333,
+          "ler_proxy": 0.25520833333333337,
+          "logical_observable_proxy": 0.48958333333333326,
+          "success_rate": 0.7447916666666666
+        },
+        "n_rounds": 35,
+        "n_steps": 210,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 48530.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 126400.0,
+          "n_idle_windows": 632,
+          "n_operations": 844,
+          "total_time_ns": 174930.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.291015625,
+          "ler_proxy": 0.291015625,
+          "logical_observable_proxy": 0.41796875,
+          "success_rate": 0.708984375
+        },
+        "n_rounds": 40,
+        "n_steps": 240,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 55430.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 144400.0,
+          "n_idle_windows": 722,
+          "n_operations": 964,
+          "total_time_ns": 199830.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2998046875,
+          "ler_proxy": 0.2998046875,
+          "logical_observable_proxy": 0.400390625,
+          "success_rate": 0.7001953125
+        },
+        "n_rounds": 45,
+        "n_steps": 270,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 62330.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 162400.0,
+          "n_idle_windows": 812,
+          "n_operations": 1084,
+          "total_time_ns": 224730.0
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.3196614583333333,
+          "ler_proxy": 0.31966145833333337,
+          "logical_observable_proxy": 0.36067708333333326,
+          "success_rate": 0.6803385416666666
+        },
+        "n_rounds": 50,
+        "n_steps": 300,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 69230.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 180400.0,
+          "n_idle_windows": 902,
+          "n_operations": 1204,
+          "total_time_ns": 249630.0
+        }
+      }
+    ],
+    "label": "fixed_zero"
+  },
+  "primary_policy": {
+    "cycle_sweep": [
+      {
+        "fixed_zero": {
+          "detector_rate": 0.055989583333333336,
+          "ler_proxy": 0.05598958333333337,
+          "logical_observable_proxy": 0.8880208333333333,
+          "success_rate": 0.9440104166666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.20930232558139533,
+          "ler_proxy": 0.20930232558139522
+        },
+        "learned": {
+          "detector_rate": 0.044270833333333336,
+          "ler_proxy": 0.04427083333333337,
+          "logical_observable_proxy": 0.9114583333333333,
+          "success_rate": 0.9557291666666666
+        },
+        "n_rounds": 5,
+        "n_steps": 30,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 7130.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 18400.0,
+          "n_idle_windows": 92,
+          "n_operations": 124,
+          "total_time_ns": 25530.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.0966796875,
+          "ler_proxy": 0.0966796875,
+          "logical_observable_proxy": 0.806640625,
+          "success_rate": 0.9033203125
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.09016927083333333,
+          "ler_proxy": 0.09016927083333337,
+          "logical_observable_proxy": 0.8196614583333333,
+          "success_rate": 0.9098307291666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.2418772563176895,
+          "ler_proxy": 0.24187725631768983
+        },
+        "learned": {
+          "detector_rate": 0.068359375,
+          "ler_proxy": 0.068359375,
+          "logical_observable_proxy": 0.86328125,
+          "success_rate": 0.931640625
+        },
+        "n_rounds": 10,
+        "n_steps": 60,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 14030.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 36400.0,
+          "n_idle_windows": 182,
+          "n_operations": 244,
+          "total_time_ns": 50430.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.1708984375,
+          "ler_proxy": 0.1708984375,
+          "logical_observable_proxy": 0.658203125,
+          "success_rate": 0.8291015625
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.11946614583333333,
+          "ler_proxy": 0.11946614583333337,
+          "logical_observable_proxy": 0.7610677083333333,
+          "success_rate": 0.8805338541666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.22343324250681196,
+          "ler_proxy": 0.22343324250681224
+        },
+        "learned": {
+          "detector_rate": 0.0927734375,
+          "ler_proxy": 0.0927734375,
+          "logical_observable_proxy": 0.814453125,
+          "success_rate": 0.9072265625
+        },
+        "n_rounds": 15,
+        "n_steps": 90,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 20930.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 54400.0,
+          "n_idle_windows": 272,
+          "n_operations": 364,
+          "total_time_ns": 75330.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.22916666666666666,
+          "ler_proxy": 0.22916666666666663,
+          "logical_observable_proxy": 0.5416666666666667,
+          "success_rate": 0.7708333333333334
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.15755208333333334,
+          "ler_proxy": 0.15755208333333337,
+          "logical_observable_proxy": 0.6848958333333333,
+          "success_rate": 0.8424479166666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.2830578512396694,
+          "ler_proxy": 0.2830578512396698
+        },
+        "learned": {
+          "detector_rate": 0.11295572916666667,
+          "ler_proxy": 0.11295572916666663,
+          "logical_observable_proxy": 0.7740885416666667,
+          "success_rate": 0.8870442708333334
+        },
+        "n_rounds": 20,
+        "n_steps": 120,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 27830.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 72400.0,
+          "n_idle_windows": 362,
+          "n_operations": 484,
+          "total_time_ns": 100230.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.287109375,
+          "ler_proxy": 0.287109375,
+          "logical_observable_proxy": 0.42578125,
+          "success_rate": 0.712890625
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.20345052083333334,
+          "ler_proxy": 0.20345052083333337,
+          "logical_observable_proxy": 0.5930989583333333,
+          "success_rate": 0.7965494791666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.31360000000000005,
+          "ler_proxy": 0.3136000000000001
+        },
+        "learned": {
+          "detector_rate": 0.1396484375,
+          "ler_proxy": 0.1396484375,
+          "logical_observable_proxy": 0.720703125,
+          "success_rate": 0.8603515625
+        },
+        "n_rounds": 25,
+        "n_steps": 150,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 34730.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 90400.0,
+          "n_idle_windows": 452,
+          "n_operations": 604,
+          "total_time_ns": 125130.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.31640625,
+          "ler_proxy": 0.31640625,
+          "logical_observable_proxy": 0.3671875,
+          "success_rate": 0.68359375
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2255859375,
+          "ler_proxy": 0.2255859375,
+          "logical_observable_proxy": 0.548828125,
+          "success_rate": 0.7744140625
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.3145743145743145,
+          "ler_proxy": 0.3145743145743144
+        },
+        "learned": {
+          "detector_rate": 0.15462239583333334,
+          "ler_proxy": 0.15462239583333337,
+          "logical_observable_proxy": 0.6907552083333333,
+          "success_rate": 0.8453776041666666
+        },
+        "n_rounds": 30,
+        "n_steps": 180,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 41630.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 108400.0,
+          "n_idle_windows": 542,
+          "n_operations": 724,
+          "total_time_ns": 150030.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.3717447916666667,
+          "ler_proxy": 0.37174479166666663,
+          "logical_observable_proxy": 0.25651041666666674,
+          "success_rate": 0.6282552083333334
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2552083333333333,
+          "ler_proxy": 0.25520833333333337,
+          "logical_observable_proxy": 0.48958333333333326,
+          "success_rate": 0.7447916666666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.33163265306122447,
+          "ler_proxy": 0.33163265306122475
+        },
+        "learned": {
+          "detector_rate": 0.17057291666666666,
+          "ler_proxy": 0.17057291666666663,
+          "logical_observable_proxy": 0.6588541666666667,
+          "success_rate": 0.8294270833333334
+        },
+        "n_rounds": 35,
+        "n_steps": 210,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 48530.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 126400.0,
+          "n_idle_windows": 632,
+          "n_operations": 844,
+          "total_time_ns": 174930.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.3805338541666667,
+          "ler_proxy": 0.38053385416666663,
+          "logical_observable_proxy": 0.23893229166666674,
+          "success_rate": 0.6194661458333334
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.291015625,
+          "ler_proxy": 0.291015625,
+          "logical_observable_proxy": 0.41796875,
+          "success_rate": 0.708984375
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.3299776286353468,
+          "ler_proxy": 0.3299776286353469
+        },
+        "learned": {
+          "detector_rate": 0.19498697916666666,
+          "ler_proxy": 0.19498697916666663,
+          "logical_observable_proxy": 0.6100260416666667,
+          "success_rate": 0.8050130208333334
+        },
+        "n_rounds": 40,
+        "n_steps": 240,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 55430.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 144400.0,
+          "n_idle_windows": 722,
+          "n_operations": 964,
+          "total_time_ns": 199830.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.3857421875,
+          "ler_proxy": 0.3857421875,
+          "logical_observable_proxy": 0.228515625,
+          "success_rate": 0.6142578125
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2998046875,
+          "ler_proxy": 0.2998046875,
+          "logical_observable_proxy": 0.400390625,
+          "success_rate": 0.7001953125
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.2909880564603692,
+          "ler_proxy": 0.2909880564603693
+        },
+        "learned": {
+          "detector_rate": 0.21256510416666666,
+          "ler_proxy": 0.21256510416666663,
+          "logical_observable_proxy": 0.5748697916666667,
+          "success_rate": 0.7874348958333334
+        },
+        "n_rounds": 45,
+        "n_steps": 270,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 62330.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 162400.0,
+          "n_idle_windows": 812,
+          "n_operations": 1084,
+          "total_time_ns": 224730.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.4182942708333333,
+          "ler_proxy": 0.41829427083333337,
+          "logical_observable_proxy": 0.16341145833333326,
+          "success_rate": 0.5817057291666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.3196614583333333,
+          "ler_proxy": 0.31966145833333337,
+          "logical_observable_proxy": 0.36067708333333326,
+          "success_rate": 0.6803385416666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.25458248472505085,
+          "ler_proxy": 0.254582484725051
+        },
+        "learned": {
+          "detector_rate": 0.23828125,
+          "ler_proxy": 0.23828125,
+          "logical_observable_proxy": 0.5234375,
+          "success_rate": 0.76171875
+        },
+        "n_rounds": 50,
+        "n_steps": 300,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 69230.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 180400.0,
+          "n_idle_windows": 902,
+          "n_operations": 1204,
+          "total_time_ns": 249630.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.4283854166666667,
+          "ler_proxy": 0.42838541666666663,
+          "logical_observable_proxy": 0.14322916666666674,
+          "success_rate": 0.5716145833333334
+        }
+      }
+    ],
+    "final_mean_rollout_reward": -0.30399948358535767,
+    "label": "full_channel_RL",
+    "ppo_cfg": {
+      "clip_eps": 0.2,
+      "device": "cpu",
+      "ent_coef": 0.001,
+      "gae_lambda": 0.95,
+      "gamma": 0.99,
+      "hidden_dim": 128,
+      "learning_rate": 0.0001,
+      "max_grad_norm": 0.5,
+      "max_steps": 1,
+      "minibatch_size": 128,
+      "obs_dim": 11,
+      "rollout_steps": 32,
+      "seed": 1821,
+      "theta_dim": 48,
+      "total_timesteps": 1024,
+      "update_epochs": 4,
+      "use_layer_norm": false,
+      "vf_coef": 0.5
+    },
+    "steane_cfg": {
+      "channel_corr_f": 1000.0,
+      "channel_corr_g": 1.6,
+      "channel_corr_g_mode": "per_circuit",
+      "channel_regime_a": 0.025,
+      "channel_regime_b": 0.25,
+      "collect_traces": true,
+      "control_dim": 8,
+      "control_mode": "gate_specific",
+      "drift_amplitude": 1.0,
+      "drift_period_steps": 150.0,
+      "expose_oracle_metrics": false,
+      "idle_p_total_per_idle": 0.0,
+      "idle_px_weight": 1.0,
+      "idle_py_weight": 1.0,
+      "idle_pz_weight": 1.0,
+      "initial_state": "+Z",
+      "meas_basis": "Z",
+      "measurement_bitflip_prob": 0.01,
+      "n_1q_control_slots": 24,
+      "n_2q_control_slots": 24,
+      "n_rounds": 6,
+      "noise_channel": "composed_google_gate_specific_correlated",
+      "p_1q_base": 0.00067,
+      "p_2q_base": 0.0027,
+      "p_clip_max": 0.3,
+      "reset_drift_on_episode": false,
+      "seed": 1821,
+      "sensitivity_1q": 0.002,
+      "sensitivity_2q": 0.005,
+      "shot_workers": 1,
+      "shots_per_step": 16,
+      "stepping_mode": "candidate_eval",
+      "syndrome_mode": "DE"
+    },
+    "train_args": {
+      "action_limit": 2.0,
+      "code_family": "steane",
+      "cycle_sweep_rounds": "5,10,15,20,25,30,35,40,45,50",
+      "device": "cpu",
+      "eval_steane_shots_per_step": 64,
+      "google_paper_ppo_preset": false,
+      "max_steps": 1,
+      "post_eval_episodes": 48,
+      "ppo_ent_coef": 0.001,
+      "ppo_hidden_dim": 128,
+      "ppo_learning_rate": 0.0001,
+      "ppo_minibatch_size": 128,
+      "ppo_update_epochs": 4,
+      "ppo_use_layer_norm": false,
+      "primary_policy_label": "full_channel_RL",
+      "rollout_steps": 64,
+      "save_json": "code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e3_g16/phaseB_focus_p010_f1e3_g16_seed1821.json",
+      "save_policy_checkpoint": "",
+      "save_primary_policy_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e3_g16/phaseB_focus_p010_f1e3_g16_seed1821_primary_checkpoint.pt",
+      "seed": 1821,
+      "steane_action_penalty_coef": 0.005,
+      "steane_channel_corr_f": 1000.0,
+      "steane_channel_corr_g": 1.6,
+      "steane_channel_corr_g_mode": "per_circuit",
+      "steane_channel_regime_a": 0.025,
+      "steane_channel_regime_b": 0.25,
+      "steane_collect_traces": false,
+      "steane_control_dim": 8,
+      "steane_control_mode": "gate_specific",
+      "steane_drift_amplitude": 1.0,
+      "steane_drift_period_steps": 150.0,
+      "steane_expose_oracle_metrics": false,
+      "steane_idle_p_total_per_idle": 0.0,
+      "steane_idle_px_weight": 1.0,
+      "steane_idle_py_weight": 1.0,
+      "steane_idle_pz_weight": 1.0,
+      "steane_measurement_bitflip_prob": 0.01,
+      "steane_miscal_penalty_coef": 0.001,
+      "steane_n_1q_control_slots": 24,
+      "steane_n_2q_control_slots": 24,
+      "steane_n_rounds": 6,
+      "steane_noise_channel": "composed_google_gate_specific_correlated",
+      "steane_p1q_base": 0.00067,
+      "steane_p2q_base": 0.0027,
+      "steane_p_clip_max": 0.3,
+      "steane_reset_drift_on_episode": false,
+      "steane_reward_mode": "paper_surrogate",
+      "steane_sensitivity_1q": 0.002,
+      "steane_sensitivity_2q": 0.005,
+      "steane_shot_workers": 1,
+      "steane_shots_per_step": 16,
+      "steane_stepping_mode": "candidate_eval",
+      "steane_success_bonus_coef": 0.0,
+      "steane_syndrome_mode": "DE",
+      "total_timesteps": 8192,
+      "trace_eval_episodes": 0,
+      "trace_eval_steane_shots_per_step": 0,
+      "trace_finetune_ent_coef": -1.0,
+      "trace_finetune_learning_rate": 0.0,
+      "trace_finetune_n_rounds": 6,
+      "trace_finetune_rollout_steps": 32,
+      "trace_finetune_shots_per_step": 16,
+      "trace_finetune_timesteps": 1024,
+      "transfer_policy_label": "full_channel_transfer_expr1",
+      "transfer_source_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_checkpoint.pt"
+    }
+  },
+  "test_condition_args": {
+    "action_limit": 2.0,
+    "code_family": "steane",
+    "cycle_sweep_rounds": "5,10,15,20,25,30,35,40,45,50",
+    "device": "cpu",
+    "eval_steane_shots_per_step": 64,
+    "google_paper_ppo_preset": false,
+    "max_steps": 1,
+    "post_eval_episodes": 48,
+    "ppo_ent_coef": 0.001,
+    "ppo_hidden_dim": 128,
+    "ppo_learning_rate": 0.0001,
+    "ppo_minibatch_size": 128,
+    "ppo_update_epochs": 4,
+    "ppo_use_layer_norm": false,
+    "primary_policy_label": "full_channel_RL",
+    "rollout_steps": 64,
+    "save_json": "code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e3_g16/phaseB_focus_p010_f1e3_g16_seed1821.json",
+    "save_policy_checkpoint": "",
+    "save_primary_policy_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e3_g16/phaseB_focus_p010_f1e3_g16_seed1821_primary_checkpoint.pt",
+    "seed": 1821,
+    "steane_action_penalty_coef": 0.005,
+    "steane_channel_corr_f": 1000.0,
+    "steane_channel_corr_g": 1.6,
+    "steane_channel_corr_g_mode": "per_circuit",
+    "steane_channel_regime_a": 0.025,
+    "steane_channel_regime_b": 0.25,
+    "steane_collect_traces": false,
+    "steane_control_dim": 8,
+    "steane_control_mode": "gate_specific",
+    "steane_drift_amplitude": 1.0,
+    "steane_drift_period_steps": 150.0,
+    "steane_expose_oracle_metrics": false,
+    "steane_idle_p_total_per_idle": 0.0,
+    "steane_idle_px_weight": 1.0,
+    "steane_idle_py_weight": 1.0,
+    "steane_idle_pz_weight": 1.0,
+    "steane_measurement_bitflip_prob": 0.01,
+    "steane_miscal_penalty_coef": 0.001,
+    "steane_n_1q_control_slots": 24,
+    "steane_n_2q_control_slots": 24,
+    "steane_n_rounds": 6,
+    "steane_noise_channel": "composed_google_gate_specific_correlated",
+    "steane_p1q_base": 0.00067,
+    "steane_p2q_base": 0.0027,
+    "steane_p_clip_max": 0.3,
+    "steane_reset_drift_on_episode": false,
+    "steane_reward_mode": "paper_surrogate",
+    "steane_sensitivity_1q": 0.002,
+    "steane_sensitivity_2q": 0.005,
+    "steane_shot_workers": 1,
+    "steane_shots_per_step": 16,
+    "steane_stepping_mode": "candidate_eval",
+    "steane_success_bonus_coef": 0.0,
+    "steane_syndrome_mode": "DE",
+    "total_timesteps": 8192,
+    "trace_eval_episodes": 0,
+    "trace_eval_steane_shots_per_step": 0,
+    "trace_finetune_ent_coef": -1.0,
+    "trace_finetune_learning_rate": 0.0,
+    "trace_finetune_n_rounds": 6,
+    "trace_finetune_rollout_steps": 32,
+    "trace_finetune_shots_per_step": 16,
+    "trace_finetune_timesteps": 1024,
+    "transfer_policy_label": "full_channel_transfer_expr1",
+    "transfer_source_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_checkpoint.pt"
+  },
+  "transfer_policy": {
+    "cycle_sweep": [
+      {
+        "fixed_zero": {
+          "detector_rate": 0.0517578125,
+          "ler_proxy": 0.0517578125,
+          "logical_observable_proxy": 0.896484375,
+          "success_rate": 0.9482421875
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.050314465408804986,
+          "ler_proxy": -0.05031446540880432
+        },
+        "learned": {
+          "detector_rate": 0.054361979166666664,
+          "ler_proxy": 0.05436197916666663,
+          "logical_observable_proxy": 0.8912760416666667,
+          "success_rate": 0.9456380208333334
+        },
+        "n_rounds": 5,
+        "n_steps": 30,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 7130.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 18400.0,
+          "n_idle_windows": 92,
+          "n_operations": 124,
+          "total_time_ns": 25530.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.09700520833333333,
+          "ler_proxy": 0.09700520833333337,
+          "logical_observable_proxy": 0.8059895833333333,
+          "success_rate": 0.9029947916666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.09375,
+          "ler_proxy": 0.09375,
+          "logical_observable_proxy": 0.8125,
+          "success_rate": 0.90625
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.06944444444444449,
+          "ler_proxy": 0.06944444444444405
+        },
+        "learned": {
+          "detector_rate": 0.08723958333333333,
+          "ler_proxy": 0.08723958333333337,
+          "logical_observable_proxy": 0.8255208333333333,
+          "success_rate": 0.9127604166666666
+        },
+        "n_rounds": 10,
+        "n_steps": 60,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 14030.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 36400.0,
+          "n_idle_windows": 182,
+          "n_operations": 244,
+          "total_time_ns": 50430.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.17610677083333334,
+          "ler_proxy": 0.17610677083333337,
+          "logical_observable_proxy": 0.6477864583333333,
+          "success_rate": 0.8238932291666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.12662760416666666,
+          "ler_proxy": 0.12662760416666663,
+          "logical_observable_proxy": 0.7467447916666667,
+          "success_rate": 0.8733723958333334
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.07197943444730084,
+          "ler_proxy": -0.07197943444730108
+        },
+        "learned": {
+          "detector_rate": 0.1357421875,
+          "ler_proxy": 0.1357421875,
+          "logical_observable_proxy": 0.728515625,
+          "success_rate": 0.8642578125
+        },
+        "n_rounds": 15,
+        "n_steps": 90,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 20930.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 54400.0,
+          "n_idle_windows": 272,
+          "n_operations": 364,
+          "total_time_ns": 75330.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.21940104166666666,
+          "ler_proxy": 0.21940104166666663,
+          "logical_observable_proxy": 0.5611979166666667,
+          "success_rate": 0.7805989583333334
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.18294270833333334,
+          "ler_proxy": 0.18294270833333337,
+          "logical_observable_proxy": 0.6341145833333333,
+          "success_rate": 0.8170572916666666
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.10320284697508901,
+          "ler_proxy": 0.10320284697508915
+        },
+        "learned": {
+          "detector_rate": 0.1640625,
+          "ler_proxy": 0.1640625,
+          "logical_observable_proxy": 0.671875,
+          "success_rate": 0.8359375
+        },
+        "n_rounds": 20,
+        "n_steps": 120,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 27830.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 72400.0,
+          "n_idle_windows": 362,
+          "n_operations": 484,
+          "total_time_ns": 100230.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.2805989583333333,
+          "ler_proxy": 0.28059895833333337,
+          "logical_observable_proxy": 0.43880208333333326,
+          "success_rate": 0.7194010416666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.1953125,
+          "ler_proxy": 0.1953125,
+          "logical_observable_proxy": 0.609375,
+          "success_rate": 0.8046875
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.015,
+          "ler_proxy": -0.015
+        },
+        "learned": {
+          "detector_rate": 0.1982421875,
+          "ler_proxy": 0.1982421875,
+          "logical_observable_proxy": 0.603515625,
+          "success_rate": 0.8017578125
+        },
+        "n_rounds": 25,
+        "n_steps": 150,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 34730.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 90400.0,
+          "n_idle_windows": 452,
+          "n_operations": 604,
+          "total_time_ns": 125130.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.3274739583333333,
+          "ler_proxy": 0.32747395833333337,
+          "logical_observable_proxy": 0.34505208333333326,
+          "success_rate": 0.6725260416666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2216796875,
+          "ler_proxy": 0.2216796875,
+          "logical_observable_proxy": 0.556640625,
+          "success_rate": 0.7783203125
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.03817914831130686,
+          "ler_proxy": -0.03817914831130673
+        },
+        "learned": {
+          "detector_rate": 0.23014322916666666,
+          "ler_proxy": 0.23014322916666663,
+          "logical_observable_proxy": 0.5397135416666667,
+          "success_rate": 0.7698567708333334
+        },
+        "n_rounds": 30,
+        "n_steps": 180,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 41630.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 108400.0,
+          "n_idle_windows": 542,
+          "n_operations": 724,
+          "total_time_ns": 150030.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.3626302083333333,
+          "ler_proxy": 0.36263020833333337,
+          "logical_observable_proxy": 0.27473958333333326,
+          "success_rate": 0.6373697916666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.25390625,
+          "ler_proxy": 0.25390625,
+          "logical_observable_proxy": 0.4921875,
+          "success_rate": 0.74609375
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.024358974358974286,
+          "ler_proxy": -0.024358974358974505
+        },
+        "learned": {
+          "detector_rate": 0.2600911458333333,
+          "ler_proxy": 0.26009114583333337,
+          "logical_observable_proxy": 0.47981770833333326,
+          "success_rate": 0.7399088541666666
+        },
+        "n_rounds": 35,
+        "n_steps": 210,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 48530.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 126400.0,
+          "n_idle_windows": 632,
+          "n_operations": 844,
+          "total_time_ns": 174930.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.384765625,
+          "ler_proxy": 0.384765625,
+          "logical_observable_proxy": 0.23046875,
+          "success_rate": 0.615234375
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.2867838541666667,
+          "ler_proxy": 0.28678385416666663,
+          "logical_observable_proxy": 0.42643229166666674,
+          "success_rate": 0.7132161458333334
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": 0.02724177071509648,
+          "ler_proxy": 0.027241770715096484
+        },
+        "learned": {
+          "detector_rate": 0.2789713541666667,
+          "ler_proxy": 0.27897135416666663,
+          "logical_observable_proxy": 0.44205729166666674,
+          "success_rate": 0.7210286458333334
+        },
+        "n_rounds": 40,
+        "n_steps": 240,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 55430.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 144400.0,
+          "n_idle_windows": 722,
+          "n_operations": 964,
+          "total_time_ns": 199830.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.4049479166666667,
+          "ler_proxy": 0.40494791666666663,
+          "logical_observable_proxy": 0.19010416666666674,
+          "success_rate": 0.5950520833333334
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.3053385416666667,
+          "ler_proxy": 0.30533854166666663,
+          "logical_observable_proxy": 0.38932291666666674,
+          "success_rate": 0.6946614583333334
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.017057569296375204,
+          "ler_proxy": -0.01705756929637539
+        },
+        "learned": {
+          "detector_rate": 0.310546875,
+          "ler_proxy": 0.310546875,
+          "logical_observable_proxy": 0.37890625,
+          "success_rate": 0.689453125
+        },
+        "n_rounds": 45,
+        "n_steps": 270,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 62330.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 162400.0,
+          "n_idle_windows": 812,
+          "n_operations": 1084,
+          "total_time_ns": 224730.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.4388020833333333,
+          "ler_proxy": 0.43880208333333337,
+          "logical_observable_proxy": 0.12239583333333326,
+          "success_rate": 0.5611979166666666
+        }
+      },
+      {
+        "fixed_zero": {
+          "detector_rate": 0.3212890625,
+          "ler_proxy": 0.3212890625,
+          "logical_observable_proxy": 0.357421875,
+          "success_rate": 0.6787109375
+        },
+        "improvement_vs_fixed_zero": {
+          "detector_rate": -0.046605876393110375,
+          "ler_proxy": -0.04660587639311055
+        },
+        "learned": {
+          "detector_rate": 0.3362630208333333,
+          "ler_proxy": 0.33626302083333337,
+          "logical_observable_proxy": 0.32747395833333326,
+          "success_rate": 0.6637369791666666
+        },
+        "n_rounds": 50,
+        "n_steps": 300,
+        "nominal_circuit_timing_per_rl_step": {
+          "active_time_ns": 69230.0,
+          "assumes_single_prep_attempt": true,
+          "idle_time_ns": 180400.0,
+          "n_idle_windows": 902,
+          "n_operations": 1204,
+          "total_time_ns": 249630.0
+        },
+        "random_uniform": {
+          "detector_rate": 0.4222005208333333,
+          "ler_proxy": 0.42220052083333337,
+          "logical_observable_proxy": 0.15559895833333326,
+          "success_rate": 0.5777994791666666
+        }
+      }
+    ],
+    "label": "full_channel_transfer_expr1",
+    "ppo_cfg": {
+      "clip_eps": 0.2,
+      "device": "cpu",
+      "ent_coef": 0.001,
+      "gae_lambda": 0.95,
+      "gamma": 0.99,
+      "hidden_dim": 128,
+      "learning_rate": 0.0001,
+      "max_grad_norm": 0.5,
+      "max_steps": 1,
+      "minibatch_size": 128,
+      "obs_dim": 11,
+      "rollout_steps": 64,
+      "seed": 720,
+      "theta_dim": 48,
+      "total_timesteps": 4096,
+      "update_epochs": 4,
+      "use_layer_norm": false,
+      "vf_coef": 0.5
+    },
+    "source_args": {
+      "action_limit": 2.0,
+      "code_family": "steane",
+      "device": "cpu",
+      "eval_steane_shots_per_step": 24,
+      "google_paper_ppo_preset": false,
+      "max_steps": 1,
+      "post_eval_episodes": 8,
+      "ppo_ent_coef": 0.001,
+      "ppo_hidden_dim": 128,
+      "ppo_learning_rate": 0.0001,
+      "ppo_minibatch_size": 128,
+      "ppo_update_epochs": 4,
+      "ppo_use_layer_norm": false,
+      "rollout_steps": 64,
+      "save_json": "code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_report.json",
+      "save_policy_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_checkpoint.pt",
+      "seed": 720,
+      "steane_action_penalty_coef": 0.005,
+      "steane_channel_corr_f": 10000.0,
+      "steane_channel_corr_g": 1.0,
+      "steane_channel_corr_g_mode": "per_window",
+      "steane_channel_regime_a": 0.025,
+      "steane_channel_regime_b": 0.25,
+      "steane_collect_traces": false,
+      "steane_control_dim": 8,
+      "steane_control_mode": "gate_specific",
+      "steane_drift_amplitude": 1.0,
+      "steane_drift_period_steps": 150.0,
+      "steane_expose_oracle_metrics": false,
+      "steane_idle_p_total_per_idle": 0.0,
+      "steane_idle_px_weight": 1.0,
+      "steane_idle_py_weight": 1.0,
+      "steane_idle_pz_weight": 1.0,
+      "steane_measurement_bitflip_prob": 0.0,
+      "steane_miscal_penalty_coef": 0.001,
+      "steane_n_1q_control_slots": 24,
+      "steane_n_2q_control_slots": 24,
+      "steane_n_rounds": 4,
+      "steane_noise_channel": "google_gate_specific",
+      "steane_p1q_base": 0.00067,
+      "steane_p2q_base": 0.0027,
+      "steane_p_clip_max": 0.3,
+      "steane_reset_drift_on_episode": false,
+      "steane_reward_mode": "paper_surrogate",
+      "steane_sensitivity_1q": 0.002,
+      "steane_sensitivity_2q": 0.005,
+      "steane_shot_workers": 1,
+      "steane_shots_per_step": 16,
+      "steane_stepping_mode": "candidate_eval",
+      "steane_success_bonus_coef": 0.0,
+      "steane_syndrome_mode": "DE",
+      "total_timesteps": 4096,
+      "trace_eval_episodes": 0,
+      "trace_eval_steane_shots_per_step": 0,
+      "trace_finetune_ent_coef": -1.0,
+      "trace_finetune_learning_rate": 0.0,
+      "trace_finetune_n_rounds": 0,
+      "trace_finetune_rollout_steps": 0,
+      "trace_finetune_shots_per_step": 0,
+      "trace_finetune_timesteps": 0
+    },
+    "source_checkpoint": "code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_checkpoint.pt",
+    "source_ppo_cfg": {
+      "clip_eps": 0.2,
+      "device": "cpu",
+      "ent_coef": 0.001,
+      "gae_lambda": 0.95,
+      "gamma": 0.99,
+      "hidden_dim": 128,
+      "learning_rate": 0.0001,
+      "max_grad_norm": 0.5,
+      "max_steps": 1,
+      "minibatch_size": 128,
+      "obs_dim": 11,
+      "rollout_steps": 64,
+      "seed": 720,
+      "theta_dim": 48,
+      "total_timesteps": 4096,
+      "update_epochs": 4,
+      "use_layer_norm": false,
+      "vf_coef": 0.5
+    }
+  }
+}

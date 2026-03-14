@@ -238,6 +238,79 @@ A:
 5. benchmark 入口也有自己的一套参数面：
    - `code/rl_train/benchmarks/eval_steane_ppo.py`
    - `code/rl_train/benchmarks/staged_steane_experiments.py`
+
+### 2026-03-13
+Q: 现在 rl_Steane_tune_experiment (💥💥💥) `Expr1` 的新图里，很多点 `learned_success` 反而低于 `fixed_zero_success`。这是不是意味着 RL 学习后效果适得其反？另外右图 `1q/2q = 4/1` 具体代表什么，为什么看起来优势最多也就十几个 percent？
+A:
+1. 是的，按 `Expr1 Phase A` 当前这批结果和当前评估口径，部分点上 RL 的确比 `fixed_zero` baseline 更差，不是图误导。
+2. 当前评估定义里 `LER~ = 1 - success_rate`，因此：
+   - `learned_success < fixed_zero_success` 时，`improvement_vs_fixed_zero.ler_proxy` 一定是负的；
+   - 这里不能把 success 和 `LER~` 看成两个互不相关的指标。
+3. `Expr1` 六个点的聚合结果是：
+   - `1q/2q = 1/4`：
+     - scale `0.5`: learned `86.771%` vs fixed_zero `85.000%`，`+1.771` pct-points
+     - scale `1.0`: learned `69.896%` vs fixed_zero `70.625%`，`-0.729` pct-points
+     - scale `1.5`: learned `56.354%` vs fixed_zero `60.104%`，`-3.750` pct-points
+   - `1q/2q = 4/1`：
+     - scale `0.5`: learned `96.562%` vs fixed_zero `96.042%`，`+0.521` pct-points
+     - scale `1.0`: learned `92.604%` vs fixed_zero `91.875%`，`+0.729` pct-points
+     - scale `1.5`: learned `85.000%` vs fixed_zero `83.333%`，`+1.667` pct-points
+4. `1q/2q = 4/1` 的意思是 `channel_regime_a = 4 * channel_regime_b`；在 `google_gate_specific` 模型下，就是 1q gate error 的缩放权重比 2q 更强。对应地，`1q/2q = 1/4` 则是 2q gate error 被放大得更重。
+5. 右图“最多约 `15%` improvement”是相对 `LER~` 的改善，不是 success rate 提升 `15` 个百分点。因为右图 baseline 本身 success 已经很高，错误率很低，所以很小的 absolute success 增益也会显示成较大的 relative `LER~` 改善。
+6. 因而对 `Expr1` 更诚实的表述应是：
+   - RL 没有在所有 gate-noise regime 上稳定优于 `fixed_zero`；
+   - 只在 `1q` 主导的 regime（`1q/2q = 4/1`）中表现出小幅 absolute gain；
+   - 在 `2q` 主导的 regime（`1q/2q = 1/4`）里，随着 noise scale 增大，RL 会退化到比 `fixed_zero` 更差。
+
+Q: baseline `fixed_zero` 不是应该表示“不做 RL 优化、保留原始 gate error”吗？如果是这样，RL 至少不该出现负提升吧？出现负提升是不是说明越学越差？
+A:
+1. `fixed_zero` 在本项目里的定义不是“理论最优原始门”，而是“动作向量恒等于 0 的 baseline policy”。
+2. 在 `eval_steane_ppo.py` 中，`fixed_zero_policy` 明确返回全 0 action；这个 action 会通过 `clipped_identity_action_mapper` 送入噪声模型。
+3. 在 `steane_adapter.py` / `noise_engine.py` 中，gate depolarizing probability 依赖于 action 与隐藏 `optimal_control` 的偏差；因此 `fixed_zero` 只是“永远猜 0”，不是物理上 guaranteed-safe 的下界，也不是理论最优。
+4. 所以：
+   - RL 出现负提升，含义就是“学到的控制向量比零动作还差”；
+   - 这在 PPO + noisy simulator + surrogate reward 的 setup 下是完全可能的，不违反定义。
+5. 导致 RL 比 `fixed_zero` 更差的常见原因包括：
+   - reward 与最终关心指标不完全一致；
+   - 训练预算太小（`Expr1 Phase A` 是 quick scan）；
+   - 动作空间高维，零动作是较强安全基线；
+   - 某些 regime 下控制收益很弱，RL 很难学出稳健正收益。
+
+Q: `overall gate-noise scale` 可以近似对应 depolarizing error model 中的什么量？
+A:
+1. 可以把它近似理解成“每个 gate 的 depolarizing probability 的整体缩放因子”。
+2. 在当前 `google_gate_specific` 模型中，`Expr1` 通过 `steane_channel_regime_a/b` 同时缩放 1q / 2q gate noise：
+   - `1q/2q = 1/4` 时：`regime_a = s`, `regime_b = 4s`
+   - `1q/2q = 4/1` 时：`regime_a = 4s`, `regime_b = s`
+   其中 `s` 就是图里的 `overall gate-noise scale`。
+3. 忽略 RL action 引入的 mismatch 项时，可近似看作：
+   - `p_1q_eff ~= s * p_1q_ref`
+   - `p_2q_eff ~= s * p_2q_ref`
+   即保持 1q:2q 比例固定，同时整体放大或缩小 gate depolarizing 强度。
+4. 因此它不是新的独立物理量，也不直接等于 logical error，而是底层 gate-level depolarizing strength 的缩放参数。
+
+Q: `Expr1` 里选取 `overall gate-noise scale = 0.5 / 1.0 / 1.5` 时，有没有考虑到我们的 memory/QEC circuit 层数很多、累计有效 error 可能已经过大？会不会这个 sweep 本身就太重？
+A:
+1. 这个担心是合理的。按当前仓库中能看到的资料，`Expr1 Phase A` 更像是一个 quick exploratory sweep，而不是按“整条电路累计 error budget”严谨校准后的取点。
+2. `Expr1` 的 stage spec 明确就是 quick scan：
+   - 文件：`code/rl_train/benchmarks/examples/stage_specs_expr1_phaseA_gate_quick.json`
+   - 配置：`n_rounds=4`，每次 candidate-eval 的名义电路规模约 `100` 个操作，`post_eval_episodes=8`
+3. 对应的 base gate depolarizing rate 量级大致是：
+   - `1q/2q = 1/4`：
+     - scale `0.5`: `p_1q ~= 3.35e-4`, `p_2q ~= 5.4e-3`
+     - scale `1.0`: `p_1q ~= 6.7e-4`, `p_2q ~= 1.08e-2`
+     - scale `1.5`: `p_1q ~= 1.005e-3`, `p_2q ~= 1.62e-2`
+   - `1q/2q = 4/1`：
+     - scale `0.5`: `p_1q ~= 1.34e-3`, `p_2q ~= 1.35e-3`
+     - scale `1.0`: `p_1q ~= 2.68e-3`, `p_2q ~= 2.7e-3`
+     - scale `1.5`: `p_1q ~= 4.02e-3`, `p_2q ~= 4.05e-3`
+4. 这意味着，尤其在 `1q/2q = 1/4` 时，2q gate depolarizing probability 会被推到约 `1.1%` 到 `1.6%`。对于一个有很多层 gate 的 Steane QEC memory circuit，这已经可能进入“多故障主导”的偏重噪声区。
+5. 因而当前 `Expr1` 的一些难看结果，不一定只说明 RL 不行，也可能说明：
+   - sweep 本身把部分点放到了过重噪声区；
+   - 在这种区间里，`fixed_zero` 和 `learned` 都很难稳定表现，趋势更容易被压扁甚至反转。
+6. 现阶段更稳妥的建议是：
+   - 后续若重做 `Expr1`，优先收窄 scale sweep，例如先试 `0.25 / 0.5 / 0.75 / 1.0`；
+   - 或者直接把横轴换成更物理的“effective circuit-level error budget / expected gate fault count”，而不只用抽象的 scale。
    这些脚本除了复用训练参数，还增加了 `trace_finetune`、`post_eval`、分 stage 运行、seed 并行等控制项。
 6. staged benchmark 还支持 JSON 驱动配置，而不需要改 Python：
    - `--stage-specs-json`

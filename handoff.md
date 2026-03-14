@@ -230,3 +230,167 @@ PYTHONPATH=code /Users/wenzhengdong/opt/anaconda3/envs/physics/bin/python \
    - `code/data_generated/rl_Steane_tune_experiment/expr1_gate_only/phaseA_quick/summary.json`
 3. Shortlist gate-only conditions for `Expr1-B`.
 4. Then prepare/run `Expr2-A`.
+
+--------------------------------------------------------------------------------
+2026-03-13 Late Update: Expr2 V2 Completed + Transfer Infrastructure Added
+--------------------------------------------------------------------------------
+
+### What Was Completed
+
+1. `Expr2 V2` main pipeline completed end-to-end
+- `Phase A` completed:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/phaseA_pilot_balanced/summary.json`
+- `Phase B focused` completed:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/phaseB_focused/summary.json`
+- `Phase C confirm` completed:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/phaseC_confirm/summary.json`
+
+2. `Expr2 V2` recap and confirm plan written
+- New recap:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/expr2_v2_recap.md`
+- Confirm stage spec:
+  - `code/rl_train/benchmarks/examples/stage_specs_expr2_v2_phaseC_confirm.json`
+
+3. `Expr2 V2` README updated
+- File:
+  - `code/data_generated/rl_steane_tune_experiments_V2/README.md`
+- Important change:
+  - `Expr2` now explicitly requires full inheritance of stronger `Expr1 V2` settings:
+    - `total_timesteps = 4096`
+    - `steane_shots_per_step = 16`
+    - `rollout_steps = 64`
+    - `ppo_learning_rate = 1e-4`
+    - `ppo_ent_coef = 0.001`
+    - `steane_action_penalty_coef = 0.005`
+    - nonzero `steane_miscal_penalty_coef`
+- README also now includes:
+  - `Expr2 V2 Outcome`
+  - final ranking after `Phase C`
+  - links to summaries and figures
+
+4. `Expr2 V2` figures added
+- New plotting script:
+  - `code/rl_train/benchmarks/plot_expr2_v2_summary.py`
+- Generated figures:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/plots/expr2_v2_phaseA_heatmaps.png`
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/plots/expr2_v2_phaseBC_compare.png`
+
+### Current Expr2 V2 Conclusion
+
+Final `Phase C confirm` ranking:
+
+1. `scale=0.025, f=1e4, g=1.0`
+- `improve(LER~) = +0.2070 +- 0.1344`
+
+2. `scale=0.025, f=1e3, g=1.6`
+- `improve(LER~) = +0.1811 +- 0.1925`
+
+3. `scale=0.02, f=1e2, g=0.4`
+- `improve(LER~) = +0.1073 +- 0.1737`
+
+Interpretation:
+- `Expr2 V2` is now clearly RL-positive under several composite settings
+- best current headline point:
+  - `scale=0.025, f=1e4, g=1.0`
+- second-best:
+  - `scale=0.025, f=1e3, g=1.6`
+
+### New Transfer-Eval Infrastructure
+
+Goal:
+- evaluate `Expr1-trained control` when injected into `Expr2` composite conditions
+
+5. Benchmark checkpoint support added
+- Modified:
+  - `code/rl_train/benchmarks/eval_steane_ppo.py`
+- New capability:
+  - `--save-policy-checkpoint`
+- This now saves:
+  - args
+  - `ppo_cfg`
+  - `steane_cfg`
+  - `model_state_dict`
+
+6. Transfer evaluation script added
+- New file:
+  - `code/rl_train/benchmarks/eval_policy_transfer.py`
+- Purpose:
+  - load one saved PPO checkpoint
+  - load one target benchmark run JSON
+  - evaluate transferred policy on target condition
+  - compare:
+    - transferred policy vs `fixed_zero`
+    - transferred policy vs target condition's existing `Expr2-trained` result
+
+### Transfer Smoke Test Already Run
+
+Source artifacts:
+- checkpoint:
+  - `code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_checkpoint.pt`
+- source report:
+  - `code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_source_seed720_report.json`
+
+Transfer target:
+- `Expr2` top confirm condition:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/phaseC_confirm/expr2v2c_confirm_s0025_f1e4_g10/seed_1440.json`
+
+Transfer output:
+- `code/data_generated/rl_steane_tune_experiments_V2/policy_transfer/expr1_to_expr2_transfer_seed720_to_expr2c_s0025_f1e4_g10.json`
+
+Observed transfer result:
+- transferred `Expr1` policy is still slightly better than `fixed_zero`
+  - `improve(LER~) = +3.57%`
+- but worse than `Expr2-trained` on the same target condition
+  - `delta_success = -0.002604`
+
+Interpretation:
+- gate-only learned control has some transferability
+- but composite-specific retraining still adds value
+- this supports the claim:
+  - `Expr2-trained` is not merely reusing a gate-only policy
+  - it learns extra adaptation to the composite environment
+
+### Verified
+- Static compile passed:
+```bash
+python -m py_compile \
+  code/rl_train/benchmarks/eval_steane_ppo.py \
+  code/rl_train/benchmarks/eval_policy_transfer.py \
+  code/rl_train/benchmarks/plot_expr2_v2_summary.py
+```
+
+### Practical Next Step For Tomorrow
+1. Do not touch `Expr2` main pipeline again unless necessary.
+   It is already complete through confirm and plotted.
+
+2. Extend the transfer test from one smoke sample to a small batch.
+- Recommended source family:
+  - `Expr1 V2`
+  - `1q/2q = 1/10`
+  - `scale = 0.025`
+- Recommended target conditions:
+  - `scale=0.025, f=1e4, g=1.0`
+  - `scale=0.025, f=1e3, g=1.6`
+  - optionally `scale=0.02, f=1e2, g=0.4`
+
+3. Produce a transfer comparison summary/figure.
+- compare three policies under the same `Expr2` composite condition:
+  - `fixed_zero`
+  - `Expr1-trained transfer`
+  - `Expr2-trained`
+
+4. Desired deliverables tomorrow:
+- transfer batch runner or stage spec
+- transfer summary JSON / markdown
+- transfer comparison plot
+
+### Current Working Tree Snapshot (newly touched in this late update)
+- Modified:
+  - `code/data_generated/rl_steane_tune_experiments_V2/README.md`
+  - `code/rl_train/benchmarks/eval_steane_ppo.py`
+- Added:
+  - `code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/expr2_v2_recap.md`
+  - `code/rl_train/benchmarks/examples/stage_specs_expr2_v2_phaseB_focused.json`
+  - `code/rl_train/benchmarks/examples/stage_specs_expr2_v2_phaseC_confirm.json`
+  - `code/rl_train/benchmarks/plot_expr2_v2_summary.py`
+  - `code/rl_train/benchmarks/eval_policy_transfer.py`

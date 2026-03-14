@@ -19,7 +19,7 @@ import torch
 from ..config import PPOConfig
 from ..codes.factory import available_code_families, build_code_components
 from ..env import ExternalSimulatorEnv
-from ..ppo import train_ppo
+from ..ppo import ActorCritic, train_ppo
 from ..steane_adapter import SteaneAdapterConfig, SteaneOnlineSteeringSimulator, clipped_identity_action_mapper
 from ..train import (
     apply_google_paper_ppo_preset,
@@ -57,6 +57,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="If >0, override shots_per_step only for trace-based evaluation.",
     )
     parser.add_argument("--save-json", type=str, default="")
+    parser.add_argument(
+        "--save-policy-checkpoint",
+        type=str,
+        default="",
+        help="Optional path to save the trained PPO policy checkpoint.",
+    )
 
     # PPO hyperparameters.
     parser.add_argument("--max-steps", type=int, default=1)
@@ -289,6 +295,47 @@ def _evaluate_policies(
     return {"learned": learned, "fixed_zero": fixed, "random_uniform": random}
 
 
+def build_actor_critic_from_cfg(cfg: PPOConfig) -> ActorCritic:
+    """Construct an actor-critic module from a serialized PPO config."""
+    return ActorCritic(
+        cfg.obs_dim,
+        cfg.theta_dim,
+        cfg.hidden_dim,
+        use_layer_norm=cfg.use_layer_norm,
+    )
+
+
+def save_policy_checkpoint(
+    checkpoint_path: Path,
+    model: ActorCritic,
+    args: argparse.Namespace,
+    ppo_cfg: PPOConfig,
+    steane_cfg: SteaneAdapterConfig,
+) -> None:
+    """Save trained policy weights and reconstruction metadata."""
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "args": vars(args),
+        "ppo_cfg": asdict(ppo_cfg),
+        "steane_cfg": asdict(steane_cfg),
+        "model_state_dict": model.state_dict(),
+    }
+    torch.save(payload, checkpoint_path)
+
+
+def load_policy_checkpoint(
+    checkpoint_path: Path,
+    device: str = "cpu",
+) -> tuple[ActorCritic, PPOConfig, dict[str, Any]]:
+    """Load a saved PPO policy checkpoint."""
+    payload = torch.load(checkpoint_path, map_location=torch.device(device))
+    ppo_cfg = PPOConfig(**payload["ppo_cfg"])
+    model = build_actor_critic_from_cfg(ppo_cfg).to(torch.device(device))
+    model.load_state_dict(payload["model_state_dict"])
+    model.eval()
+    return model, ppo_cfg, payload
+
+
 def _rel_improvement(base: float, new: float) -> float:
     base_f = float(base)
     new_f = float(new)
@@ -413,6 +460,14 @@ def run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         out_path = Path(args.save_json)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    if args.save_policy_checkpoint:
+        save_policy_checkpoint(
+            checkpoint_path=Path(args.save_policy_checkpoint),
+            model=model,
+            args=args,
+            ppo_cfg=cfg,
+            steane_cfg=steane_cfg,
+        )
     return report
 
 
@@ -448,6 +503,8 @@ def main() -> None:
     print_report(report)
     if args.save_json:
         print(f"Saved benchmark report: {args.save_json}")
+    if args.save_policy_checkpoint:
+        print(f"Saved policy checkpoint: {args.save_policy_checkpoint}")
 
 
 if __name__ == "__main__":

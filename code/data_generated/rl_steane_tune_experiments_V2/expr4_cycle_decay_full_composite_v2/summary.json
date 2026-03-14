@@ -1,0 +1,309 @@
+{
+  "n_files": 3,
+  "primary_policy_label": "full_channel_RL",
+  "rounds": [
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50
+  ],
+  "rows": [
+    {
+      "logical_observable_proxy_mean": 0.9479166666666666,
+      "logical_observable_proxy_std": 0.008026580733032522,
+      "n_rounds": 5,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.9739583333333334,
+      "success_rate_std": 0.004013290366516261
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.23936480186480188,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.07494436449255364,
+      "logical_observable_proxy_mean": 0.9609375,
+      "logical_observable_proxy_std": 0.0027621358640099515,
+      "n_rounds": 5,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.98046875,
+      "success_rate_std": 0.0013810679320049757
+    },
+    {
+      "logical_observable_proxy_mean": 0.9479166666666666,
+      "logical_observable_proxy_std": 0.007151587262710062,
+      "n_rounds": 5,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.9739583333333334,
+      "success_rate_std": 0.003575793631355031
+    },
+    {
+      "logical_observable_proxy_mean": 0.90234375,
+      "logical_observable_proxy_std": 0.01728226453304219,
+      "n_rounds": 10,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.951171875,
+      "success_rate_std": 0.008641132266521094
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.31953353486200137,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.0977556026851691,
+      "logical_observable_proxy_mean": 0.9351128472222222,
+      "logical_observable_proxy_std": 0.0041289708312587685,
+      "n_rounds": 10,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.967556423611111,
+      "success_rate_std": 0.0020644854156293842
+    },
+    {
+      "logical_observable_proxy_mean": 0.9047309027777778,
+      "logical_observable_proxy_std": 0.011429855974187227,
+      "n_rounds": 10,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.952365451388889,
+      "success_rate_std": 0.005714927987093612
+    },
+    {
+      "logical_observable_proxy_mean": 0.863064236111111,
+      "logical_observable_proxy_std": 0.02365550934449746,
+      "n_rounds": 15,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.9315321180555555,
+      "success_rate_std": 0.011827754672248728
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.19118715759396132,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.08024379577158806,
+      "logical_observable_proxy_mean": 0.8910590277777777,
+      "logical_observable_proxy_std": 0.00936434418853796,
+      "n_rounds": 15,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.9455295138888888,
+      "success_rate_std": 0.00468217209426898
+    },
+    {
+      "logical_observable_proxy_mean": 0.8743489583333334,
+      "logical_observable_proxy_std": 0.018112536124015047,
+      "n_rounds": 15,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.9371744791666666,
+      "success_rate_std": 0.009056268062007523
+    },
+    {
+      "logical_observable_proxy_mean": 0.80859375,
+      "logical_observable_proxy_std": 0.029505909358397555,
+      "n_rounds": 20,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.904296875,
+      "success_rate_std": 0.014752954679198777
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.26272299216418205,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.12016527628884763,
+      "logical_observable_proxy_mean": 0.8624131944444445,
+      "logical_observable_proxy_std": 0.004644300034512278,
+      "n_rounds": 20,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.9312065972222223,
+      "success_rate_std": 0.002322150017256139
+    },
+    {
+      "logical_observable_proxy_mean": 0.8298611111111112,
+      "logical_observable_proxy_std": 0.024268712775944893,
+      "n_rounds": 20,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.9149305555555557,
+      "success_rate_std": 0.012134356387972448
+    },
+    {
+      "logical_observable_proxy_mean": 0.7853732638888888,
+      "logical_observable_proxy_std": 0.03332135020428683,
+      "n_rounds": 25,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.8926866319444443,
+      "success_rate_std": 0.016660675102143415
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.20918282449837675,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.06831394899042482,
+      "logical_observable_proxy_mean": 0.8324652777777777,
+      "logical_observable_proxy_std": 0.011890301676912154,
+      "n_rounds": 25,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.9162326388888888,
+      "success_rate_std": 0.005945150838456077
+    },
+    {
+      "logical_observable_proxy_mean": 0.7999131944444443,
+      "logical_observable_proxy_std": 0.023899131767250382,
+      "n_rounds": 25,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.8999565972222222,
+      "success_rate_std": 0.011949565883625191
+    },
+    {
+      "logical_observable_proxy_mean": 0.7473958333333334,
+      "logical_observable_proxy_std": 0.0404519942879113,
+      "n_rounds": 30,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.8736979166666666,
+      "success_rate_std": 0.02022599714395565
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.19870090666500487,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.13835086980101838,
+      "logical_observable_proxy_mean": 0.8031684027777777,
+      "logical_observable_proxy_std": 0.001106558054165125,
+      "n_rounds": 30,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.9015842013888888,
+      "success_rate_std": 0.0005532790270825625
+    },
+    {
+      "logical_observable_proxy_mean": 0.7515190972222222,
+      "logical_observable_proxy_std": 0.019706486258240407,
+      "n_rounds": 30,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.875759548611111,
+      "success_rate_std": 0.009853243129120202
+    },
+    {
+      "logical_observable_proxy_mean": 0.7194010416666666,
+      "logical_observable_proxy_std": 0.04175135165843994,
+      "n_rounds": 35,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.8597005208333334,
+      "success_rate_std": 0.02087567582921997
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.19592865300678472,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.06707394151464871,
+      "logical_observable_proxy_mean": 0.7769097222222222,
+      "logical_observable_proxy_std": 0.018301361668670173,
+      "n_rounds": 35,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.888454861111111,
+      "success_rate_std": 0.009150680834335087
+    },
+    {
+      "logical_observable_proxy_mean": 0.7083333333333334,
+      "logical_observable_proxy_std": 0.040598421015081716,
+      "n_rounds": 35,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.8541666666666666,
+      "success_rate_std": 0.020299210507540858
+    },
+    {
+      "logical_observable_proxy_mean": 0.6703559027777777,
+      "logical_observable_proxy_std": 0.03872953189577851,
+      "n_rounds": 40,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.8351779513888888,
+      "success_rate_std": 0.019364765947889256
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.21726498570442684,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.06715479367368983,
+      "logical_observable_proxy_mean": 0.744357638888889,
+      "logical_observable_proxy_std": 0.01175886908345836,
+      "n_rounds": 40,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.8721788194444445,
+      "success_rate_std": 0.005879434541729179
+    },
+    {
+      "logical_observable_proxy_mean": 0.6649305555555556,
+      "logical_observable_proxy_std": 0.033855557752758766,
+      "n_rounds": 40,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.8324652777777778,
+      "success_rate_std": 0.016927778876379383
+    },
+    {
+      "logical_observable_proxy_mean": 0.6384548611111112,
+      "logical_observable_proxy_std": 0.03758916105975645,
+      "n_rounds": 45,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.8192274305555557,
+      "success_rate_std": 0.018794580529878226
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.21563643103934024,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.02414092433527636,
+      "logical_observable_proxy_mean": 0.7172309027777777,
+      "logical_observable_proxy_std": 0.021404215288086698,
+      "n_rounds": 45,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.8586154513888888,
+      "success_rate_std": 0.010702107644043349
+    },
+    {
+      "logical_observable_proxy_mean": 0.636935763888889,
+      "logical_observable_proxy_std": 0.04530655459345824,
+      "n_rounds": 45,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.8184678819444445,
+      "success_rate_std": 0.022653277296729123
+    },
+    {
+      "logical_observable_proxy_mean": 0.5878906249999999,
+      "logical_observable_proxy_std": 0.04353711848255335,
+      "n_rounds": 50,
+      "n_seeds": 3,
+      "policy_label": "fixed_zero",
+      "success_rate_mean": 0.7939453125,
+      "success_rate_std": 0.021768559241276676
+    },
+    {
+      "improve_vs_fixed_zero_ler_proxy_mean": 0.19466583741337473,
+      "improve_vs_fixed_zero_ler_proxy_std": 0.016009313303768043,
+      "logical_observable_proxy_mean": 0.668185763888889,
+      "logical_observable_proxy_std": 0.034720865858924706,
+      "n_rounds": 50,
+      "n_seeds": 3,
+      "policy_label": "full_channel_RL",
+      "success_rate_mean": 0.8340928819444445,
+      "success_rate_std": 0.017360432929462353
+    },
+    {
+      "logical_observable_proxy_mean": 0.5989583333333334,
+      "logical_observable_proxy_std": 0.049967889718233204,
+      "n_rounds": 50,
+      "n_seeds": 3,
+      "policy_label": "full_channel_transfer_expr1",
+      "success_rate_mean": 0.7994791666666666,
+      "success_rate_std": 0.024983944859116602
+    }
+  ],
+  "transfer_policy_label": "full_channel_transfer_expr1"
+}

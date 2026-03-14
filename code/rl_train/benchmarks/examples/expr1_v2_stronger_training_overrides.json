@@ -1,0 +1,9 @@
+{
+  "total_timesteps": 4096,
+  "steane_shots_per_step": 16,
+  "rollout_steps": 64,
+  "ppo_learning_rate": 0.0001,
+  "ppo_ent_coef": 0.001,
+  "steane_action_penalty_coef": 0.005,
+  "steane_miscal_penalty_coef": 0.001
+}
