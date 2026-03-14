@@ -413,13 +413,13 @@ So the intended V2 improvement is:
 
 ### Expr2 V2 Outcome
 
-`Expr2 V2` has now been rerun through:
+`Expr2 V2` is complete through:
 
-- `phaseA_pilot_balanced/`
-- `phaseB_focused/`
-- `phaseC_confirm/`
+- `Phase A pilot`
+- `Phase B focused`
+- `Phase C confirm`
 
-Key result:
+Headline result:
 
 - `Expr2 V2` does produce stable RL-positive composite settings once the
   experiment fully inherits the stronger `Expr1 V2` training recipe
@@ -435,12 +435,19 @@ Confirmed ranking from `Phase C`:
 
 Interpretation:
 
-- the best current `Expr2 V2` headline point is:
-  - `scale=0.025, f=1e4, g=1.0`
+- the best current `Expr2 V2` headline point is `scale=0.025, f=1e4, g=1.0`
 - `scale=0.025, f=1e3, g=1.6` is a close secondary winner
 - `scale=0.02, f=1e2, g=0.4` remains RL-positive, but is weaker at confirm level
 
-Supporting files:
+Recommended GitHub-facing readout:
+
+- best balanced composite point:
+  - `scale=0.025, f=1e4, g=1.0`
+- shortest conclusion:
+  - RL remains effective after adding correlated noise, but only in a subset of
+    well-balanced composite regimes
+
+Figures and summaries:
 
 - [Expr2 recap](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/expr2_v2_recap.md)
 - [Phase A summary](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/phaseA_pilot_balanced/summary.json)
@@ -623,13 +630,13 @@ to:
 
 ### Expr3 V2 Outcome
 
-`Expr3 V2` has now been rerun through:
+`Expr3 V2` is complete through:
 
-- `phaseA_pilot/`
-- `phaseB_focused/`
-- `phaseC_confirm/`
+- `Phase A pilot`
+- `Phase B focused`
+- `Phase C confirm`
 
-Key result:
+Headline result:
 
 - the `Expr2 V2` RL advantage does survive after adding measurement bit-flip
   noise, but the positive margin shrinks as `p_meas` grows
@@ -645,8 +652,8 @@ Confirmed ranking from `Phase C`:
 
 Interpretation:
 
-- the best current `Expr3 V2` headline point is:
-  - `scale=0.025, f=1e4, g=1.0, p_meas=3e-3`
+- the best current `Expr3 V2` headline point is
+  `scale=0.025, f=1e4, g=1.0, p_meas=3e-3`
 - the best `Expr2` anchor remains the best choice after adding measurement
   noise
 - when `p_meas` rises from `3e-3` to `1e-2`, the RL-positive margin weakens but
@@ -655,7 +662,15 @@ Interpretation:
   - gate-specific RL control remains useful in a fuller composite setting
   - but the robustness window narrows as measurement noise increases
 
-Supporting files:
+Recommended GitHub-facing readout:
+
+- best full-composite point:
+  - `scale=0.025, f=1e4, g=1.0, p_meas=3e-3`
+- shortest conclusion:
+  - RL remains useful after adding measurement noise, but the advantage shrinks
+    as readout faults become stronger
+
+Figures and summaries:
 
 - [Expr3 recap](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr3_full_composite_v2/expr3_v2_recap.md)
 - [Phase A summary](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr3_full_composite_v2/phaseA_pilot/summary.json)
@@ -817,6 +832,63 @@ Practical interpretation:
 - `Expr4` should not spend most of its budget on many training conditions
 - instead, it should spend budget on one very strong full-channel source policy
   plus high-quality fixed-policy evaluation over the cycle sweep
+
+### Expr4 V2 Outcome
+
+`Expr4 V2` is now complete through `Phase C confirm`.
+
+Final headline condition:
+
+- `scale = 0.025`
+- `f = 1e4`
+- `g = 1.0`
+- `p_meas = 3e-3`
+
+Final confirm used `6` seeds and compared:
+
+- `full_channel_RL`
+- `full_channel_transfer_expr1`
+- `fixed_zero`
+
+Confirmed cycle-sweep readout:
+
+- `n_rounds = 5`
+  - `full_channel_RL`: `97.82% +- 0.31%`
+  - `full_channel_transfer_expr1`: `97.00% +- 0.69%`
+  - `fixed_zero`: `97.06% +- 0.56%`
+- `n_rounds = 25`
+  - `full_channel_RL`: `91.36% +- 0.72%`
+  - `full_channel_transfer_expr1`: `86.50% +- 1.64%`
+  - `fixed_zero`: `86.20% +- 2.03%`
+- `n_rounds = 50`
+  - `full_channel_RL`: `82.67% +- 1.69%`
+  - `full_channel_transfer_expr1`: `74.64% +- 3.40%`
+  - `fixed_zero`: `74.99% +- 3.00%`
+
+Interpretation:
+
+- the full-channel-trained controller remains best across the whole cycle sweep
+- the gap relative to `Expr1` transfer becomes substantial at longer cycle
+  depth
+- `Expr1` transfer is not a reliable explanation for the long-cycle advantage
+  seen under the full composite test channel
+
+Recommended GitHub-facing readout:
+
+- best long-cycle headline condition:
+  - `scale=0.025, f=1e4, g=1.0, p_meas=3e-3`
+- shortest conclusion:
+  - full-channel RL keeps a clear advantage over both `Expr1` transfer and
+    `fixed_zero`, and that gap widens at longer cycle depth
+
+Figures and summaries:
+
+- [Expr4 Phase A summary](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/summary.md)
+- [Expr4 Phase A figure](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/expr4_v2_cycle_decay.png)
+- [Expr4 Phase B summary `p=1e-2, f=1e4, g=1.0`](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e4_g10/summary.md)
+- [Expr4 Phase B summary `p=1e-2, f=1e3, g=1.6`](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseB_focus_p010_f1e3_g16/summary.md)
+- [Expr4 Phase C summary](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseC_confirm/summary.md)
+- [Expr4 Phase C figure](/Users/wenzhengdong/Desktop/RL_QEC_control_tuning/code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseC_confirm/cycle_decay.png)
 
 ## Suggested Directory Layout
 
@@ -1023,3 +1095,35 @@ So the working lesson from this transfer check is:
   to the composite noise environment
 - this supports a composite-specific RL story, but it does not yet isolate the
   exact mechanism as direct suppression of the correlated Pauli component
+
+### 7. `Expr4 V2` Shows That Long-Cycle Advantage Also Requires Full-Channel Training
+
+We extended the same transfer question into the cycle-decay setting by fixing
+one full-composite test channel and sweeping only `n_rounds`.
+
+Final `Phase C` confirm on
+`scale = 0.025, f = 1e4, g = 1.0, p_meas = 3e-3` showed:
+
+- `n_rounds = 25`
+  - `full_channel_RL`: `91.36% +- 0.72%`
+  - `full_channel_transfer_expr1`: `86.50% +- 1.64%`
+  - `fixed_zero`: `86.20% +- 2.03%`
+- `n_rounds = 50`
+  - `full_channel_RL`: `82.67% +- 1.69%`
+  - `full_channel_transfer_expr1`: `74.64% +- 3.40%`
+  - `fixed_zero`: `74.99% +- 3.00%`
+
+Interpretation:
+
+- full-channel RL remains clearly best over the entire cycle sweep
+- the advantage is small at short depth but becomes much larger at longer
+  cycle count
+- transferred `Expr1` gate-only control does not explain the long-cycle
+  robustness of the full-channel-trained policy
+
+So the working lesson from `Expr4 V2` is:
+
+- the full-composite advantage is not limited to fixed short-depth evaluation
+- it persists into the long-cycle regime
+- and long-cycle robustness should be treated as additional evidence that
+  `Expr1` gate-only transfer is insufficient once the full channel is present
