@@ -118,46 +118,90 @@ Detailed experiment outputs and scripts live in:
 - [Experiment README](./code/data_generated/rl_Steane_tune_experiment/README.md)
 - [Final Experiment Conclusion](./code/data_generated/rl_Steane_tune_experiment/artifacts/final_conclusion.md)
 
-## Results
+## V2 Results
 
-The strongest positive result is under standard composite noise:
+The current canonical results are under:
 
-- `Expr2 Phase C` best confirm condition: `f=1e3, g=1.6`
-- improve(LER~): `+30.96% +- 14.36%`
+- [V2 experiment README](./code/data_generated/rl_steane_tune_experiments_V2/README.md)
 
-The strongest negative result is from the final memory-decay study:
+The V2 story is:
 
-- final showcase condition: `p=0.01, f=1e2, g=1.6`
-- `trained_on_composite` remains above `trained_on_full_composite`
-- this remains true after a `20-seed` confirm run
+- `Expr1`: recalibrate the gate-only regime and lock in a stronger PPO recipe
+- `Expr2`: show RL-positive gains under balanced gate-plus-correlated composite noise
+- `Expr3`: show those gains survive after adding measurement bit-flip noise
+- `Expr4`: show the full-channel advantage persists in long cycle-decay sweeps
 
-One figure that captures the current project state:
+### Headline Findings
 
-![Expr4 Phase C cycle decay](./code/data_generated/rl_Steane_tune_experiment/plots/expr4_phaseC_cycle_decay.png)
+`Expr2 V2` best confirmed composite point:
 
-Interpretation:
+- `scale=0.025, f=1e4, g=1.0`
+- `improve(LER~) = +20.70% +- 13.44%`
 
-- RL clearly improves performance over the fixed-zero baseline under composite noise
-- but measurement-aware training does not currently outperform composite-only training
+`Expr3 V2` best confirmed full-composite point:
+
+- `scale=0.025, f=1e4, g=1.0, p_meas=3e-3`
+- `improve(LER~) = +27.03% +- 10.03%`
+
+`Expr4 V2` final cycle-decay confirm on the same full channel:
+
+- `n_rounds=50`
+  - `full_channel_RL = 82.67% +- 1.69%`
+  - `full_channel_transfer_expr1 = 74.64% +- 3.40%`
+  - `fixed_zero = 74.99% +- 3.00%`
+
+Working interpretation:
+
+- RL remains effective after adding correlated noise
+- the advantage survives after adding measurement noise
+- at long cycle depth, full-channel RL stays clearly above both `Expr1`
+  transfer and `fixed_zero`
+
+### Main Figures
+
+Composite-noise benchmark:
+
+![Expr2 V2 Phase B/C compare](./code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/plots/expr2_v2_phaseBC_compare.png)
+
+Full-composite benchmark with measurement noise:
+
+![Expr3 V2 Phase B/C compare](./code/data_generated/rl_steane_tune_experiments_V2/expr3_full_composite_v2/plots/expr3_v2_phaseBC_compare.png)
+
+Long-cycle full-channel memory decay:
+
+![Expr4 V2 Phase C cycle decay](./code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseC_confirm/cycle_decay.png)
+
+### Transfer Checks
+
+Two transfer checks are part of the V2 evidence chain:
+
+- `Expr1 -> Expr2` transfer does not explain the composite-noise gains
+- `Expr1 -> Expr3` transfer does not explain the full-composite gains
+
+This is why the V2 conclusion is framed as:
+
+- RL learns additional adaptation to the composite / full-composite environment
+
+rather than:
+
+- RL simply reuses a gate-only policy learned in `Expr1`
 
 ## Conclusion
 
-The current evidence supports the following claim:
+The current V2 evidence supports the following claim:
 
-- RL control tuning improves Steane-QEC performance under composite correlated noise
+- RL control tuning improves Steane-QEC performance under calibrated composite
+  and full-composite noise models
 
-The current evidence does **not** support the stronger claim that:
+The strongest V2 long-cycle claim is:
 
-- training on full composite noise with measurement overlay yields a better controller than training on composite noise alone
-
-In other words:
-
-- `Expr2` is a strong positive result
-- `Expr3` is a qualified positive result
-- `Expr4` is a stable negative result for the full-composite-advantage hypothesis
+- full-channel RL retains a clear advantage over both `Expr1` transfer and
+  `fixed_zero` in the final `Expr4 V2` cycle sweep
 
 ## Where To Look
 
 - [PROJECT_ARCHITECTURE.md](./PROJECT_ARCHITECTURE.md)
-- [Experiment README](./code/data_generated/rl_Steane_tune_experiment/README.md)
-- [Final Experiment Conclusion](./code/data_generated/rl_Steane_tune_experiment/artifacts/final_conclusion.md)
+- [V2 experiment README](./code/data_generated/rl_steane_tune_experiments_V2/README.md)
+- [Expr2 recap](./code/data_generated/rl_steane_tune_experiments_V2/expr2_standard_composite_v2/expr2_v2_recap.md)
+- [Expr3 recap](./code/data_generated/rl_steane_tune_experiments_V2/expr3_full_composite_v2/expr3_v2_recap.md)
+- [Expr4 Phase C summary](./code/data_generated/rl_steane_tune_experiments_V2/expr4_cycle_decay_full_composite_v2/phaseC_confirm/summary.md)

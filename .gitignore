@@ -10,3 +10,7 @@ results/figures/*
 results/tables/*
 !results/figures/.gitkeep
 !results/tables/.gitkeep
+
+# Local scratch / reference materials not for repo sync
+trash_/
+resources/rl_qec_papers/
